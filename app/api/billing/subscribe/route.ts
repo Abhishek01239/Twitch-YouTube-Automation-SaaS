@@ -1,5 +1,5 @@
 import {NextResponse} from "next/server";
-import {createClient} from "@/lib/supabase/server";
+import {createClient} from "../../../../lib/supabase/server";
 
 const RAZORPAY_BASE="https://api.razorpay.com/v1";
 
