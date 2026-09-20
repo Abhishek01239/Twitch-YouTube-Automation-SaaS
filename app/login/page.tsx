@@ -1,0 +1,2 @@
+import Link from "next/link";
+export default function Login(){return <main className="flex min-h-screen items-center justify-center px-6"><div className="w-full max-w-md rounded-2xl border border-zinc-800 bg-zinc-950 p-8"><h1 className="text-3xl font-bold">Sign in</h1><p className="mt-2 text-zinc-400">Authentication will be wired to Supabase next.</p><Link href="/" className="mt-6 inline-block text-purple-400">← Back</Link></div></main>}
