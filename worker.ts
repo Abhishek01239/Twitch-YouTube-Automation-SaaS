@@ -34,6 +34,19 @@ async function refreshTwitchToken(token:TwitchToken){
 }
 async function getUsableTwitchToken(token:TwitchToken){return !token.token_expires_at||new Date(token.token_expires_at).getTime()<=Date.now()+120000?refreshTwitchToken(token):token;}
 
+const SOURCE_BUCKET="source-clips";
+
+async function storeClip(connectionUserId:string,clipId:string,sourceUrl:string){
+  const response=await fetch(sourceUrl);
+  if(!response.ok)throw new Error(`Twitch clip download failed: ${response.status}`);
+  const buffer=Buffer.from(await response.arrayBuffer());
+  if(!buffer.length)throw new Error("Twitch clip is empty");
+  const storagePath=`clips/${connectionUserId}/${clipId}.mp4`;
+  const {error}=await admin.storage.from(SOURCE_BUCKET).upload(storagePath,buffer,{contentType:"video/mp4",upsert:true});
+  if(error)throw new Error(`Supabase Storage upload failed: ${error.message}`);
+  return storagePath;
+}
+
 async function ingestTwitchClips(){
   const {data:connections}=await admin.from("twitch_connections").select("id,user_id,twitch_user_id,twitch_display_name");
   if(!connections?.length)return;
@@ -74,9 +87,11 @@ async function ingestTwitchClips(){
         const exists=await admin.from("source_shorts").select("id").eq("source_url",sourceUrl).maybeSingle();
         if(exists.data)continue;
 
+        const storagePath=await storeClip(connection.user_id,clip.id,sourceUrl);
         const meta=generateMetadata({channelName:connection.twitch_display_name,game:"Gaming",transcript:clip.title,keywords:["Twitch","Gaming","Shorts"]});
         const {error}=await admin.from("source_shorts").insert({
           source_url:sourceUrl,
+          storage_path:storagePath,
           title:clip.title||meta.title,
           description:`Twitch clip by ${clip.broadcaster_name}. ${clip.title||""}`,
           tags:["Twitch","Gaming","YouTube Shorts",clip.broadcaster_name],
@@ -89,9 +104,15 @@ async function ingestTwitchClips(){
 }
 
 async function downloadVideo(source:Source){
-  const url=source.source_url||(source.storage_path?.startsWith("http")?source.storage_path:null);
-  if(!url)throw new Error("Source Short has no downloadable source_url");
-  const response=await fetch(url);
+  if(source.storage_path && !source.storage_path.startsWith("http")){
+    const {data,error}=await admin.storage.from(SOURCE_BUCKET).download(source.storage_path);
+    if(error||!data)throw new Error(`Source video storage download failed: ${error?.message||"missing file"}`);
+    const buffer=Buffer.from(await data.arrayBuffer());
+    if(!buffer.length)throw new Error("Stored source video is empty");
+    return {buffer,contentType:"video/mp4"};
+  }
+  if(!source.source_url)throw new Error("Source Short has no downloadable source");
+  const response=await fetch(source.source_url);
   if(!response.ok)throw new Error(`Source video download failed: ${response.status}`);
   const buffer=Buffer.from(await response.arrayBuffer());
   if(!buffer.length)throw new Error("Source video is empty");
