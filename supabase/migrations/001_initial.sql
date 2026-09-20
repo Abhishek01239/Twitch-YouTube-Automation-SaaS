@@ -30,3 +30,14 @@ $$;
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users for each row execute procedure public.handle_new_user();
+
+-- Scheduling rule: a channel's pending upload must be at least 2 hours after its previous uploaded/processing distribution.
+create or replace function public.can_schedule_channel_upload(p_channel_id uuid, p_scheduled_at timestamptz)
+returns boolean language sql stable as $$
+  select not exists (
+    select 1 from public.upload_jobs
+    where channel_id=p_channel_id
+      and status in ('uploaded','processing')
+      and abs(extract(epoch from (p_scheduled_at-scheduled_at))) < 7200
+  );
+$$;
