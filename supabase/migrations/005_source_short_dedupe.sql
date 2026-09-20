@@ -1,0 +1,1 @@
+create unique index if not exists source_shorts_source_url_unique on public.source_shorts(source_url) where source_url is not null;
