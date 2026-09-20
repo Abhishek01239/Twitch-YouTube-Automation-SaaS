@@ -156,7 +156,7 @@ async function ensureEditedAsset(source:Source,video:Buffer){
   try{
     await fs.writeFile(srt,makeSrt(transcript.segments),"utf8");
     const edited=await makeVerticalShort(source,video,transcript.segments.length?srt:undefined);
-    const storagePath=source.storage_path?source.storage_path.replace(/^clips\\//,"edited/").replace(/\.mp4$/i,"-9x16-captioned.mp4"):"edited/"+source.id+"-9x16-captioned.mp4";
+    const storagePath=source.storage_path?source.storage_path.replace(/^clips\//,"edited/").replace(/\.mp4$/i,"-9x16-captioned.mp4"):"edited/"+source.id+"-9x16-captioned.mp4";
     const {error}=await admin.storage.from(SOURCE_BUCKET).upload(storagePath,edited,{contentType:"video/mp4",upsert:true});
     if(error)throw new Error("Edited short storage upload failed: "+error.message);
     const {error:updateError}=await admin.from("source_shorts").update({edited_storage_path:storagePath}).eq("id",source.id);
