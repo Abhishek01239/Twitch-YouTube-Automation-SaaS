@@ -1,6 +1,6 @@
 import {redirect} from "next/navigation";
 import Link from "next/link";
-import {createClient} from "@/lib/supabase/server";
+import {createClient} from "../../lib/supabase/server";
 import BillingButton from "./BillingButton";
 
 export default async function Dashboard(){
