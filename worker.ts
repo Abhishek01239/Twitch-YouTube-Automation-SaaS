@@ -1,5 +1,9 @@
 import {createClient} from "@supabase/supabase-js";
 import {generateMetadata} from "./lib/metadata";
+import {execFile} from "node:child_process";
+import {promises as fs} from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 const DAY=24*60*60*1000;
 const GAP=2*60*60*1000;
@@ -9,7 +13,7 @@ type Channel={id:string;name:string;youtube_channel_id:string;status:string};
 type Job={id:string;source_short_id:string;channel_id:string;scheduled_at:string;status:string;attempts:number};
 type YTToken={channel_id:string;access_token:string;refresh_token:string;token_expires_at:string|null};
 type TwitchToken={connection_id:string;access_token:string;refresh_token:string;token_expires_at:string|null};
-type Source={id:string;source_url:string|null;storage_path:string|null;title:string|null;description:string|null;tags:string[];hashtags:string[];created_at:string};
+type Source={id:string;source_url:string|null;storage_path:string|null;edited_storage_path:string|null;title:string|null;description:string|null;tags:string[];hashtags:string[];created_at:string};
 
 const admin=createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!,process.env.SUPABASE_SERVICE_ROLE_KEY!,{auth:{autoRefreshToken:false,persistSession:false}});
 const required=(name:string)=>{const v=process.env[name];if(!v)throw new Error(`${name} is required`);return v;};
@@ -103,6 +107,34 @@ async function ingestTwitchClips(){
   }
 }
 
+async function makeVerticalShort(source:Source,video:Buffer){
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),"twitch-short-"));
+  const input=path.join(dir,"input.mp4");
+  const output=path.join(dir,"output.mp4");
+  try{
+    await fs.writeFile(input,video);
+    await new Promise<void>((resolve,reject)=>execFile("ffmpeg",[
+      "-y","-i",input,
+      "-vf","scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1",
+      "-c:v","libx264","-preset","veryfast","-crf","23",
+      "-c:a","aac","-b:a","128k","-movflags","+faststart",output
+    ],{maxBuffer:1024*1024},(error)=>error?reject(error):resolve()));
+    return await fs.readFile(output);
+  } finally { await fs.rm(dir,{recursive:true,force:true}); }
+}
+
+async function ensureEditedAsset(source:Source,video:Buffer){
+  if(source.edited_storage_path)return source.edited_storage_path;
+  const edited=await makeVerticalShort(source,video);
+  const storagePath=source.storage_path?source.storage_path.replace(/^clips\\//,"edited/").replace(/\.mp4$/i,"-9x16.mp4"):
+    `edited/${source.id}-9x16.mp4`;
+  const {error}=await admin.storage.from(SOURCE_BUCKET).upload(storagePath,edited,{contentType:"video/mp4",upsert:true});
+  if(error)throw new Error(`Edited short storage upload failed: ${error.message}`);
+  const {error:updateError}=await admin.from("source_shorts").update({edited_storage_path:storagePath}).eq("id",source.id);
+  if(updateError)throw updateError;
+  return storagePath;
+}
+
 async function downloadVideo(source:Source){
   if(source.storage_path && !source.storage_path.startsWith("http")){
     const {data,error}=await admin.storage.from(SOURCE_BUCKET).download(source.storage_path);
@@ -162,7 +194,10 @@ async function processDueJobs(){
       if(channel.status!=="active")throw new Error("Channel is not active");
       const usable=await getUsableGoogleToken(token as YTToken);
       const {buffer,contentType}=await downloadVideo(source as Source);
-      const videoId=await uploadToYouTube(usable.access_token,source as Source,buffer,contentType);
+      await ensureEditedAsset(source as Source,buffer);
+      const editedSource={...(source as Source),storage_path:(source as Source).edited_storage_path||undefined,source_url:null};
+      const {buffer:editedBuffer}=await downloadVideo({...editedSource,edited_storage_path:(await admin.from("source_shorts").select("edited_storage_path").eq("id",source.id).single()).data?.edited_storage_path||null} as Source);
+      const videoId=await uploadToYouTube(usable.access_token,source as Source,editedBuffer,"video/mp4");
       await admin.from("upload_jobs").update({status:"uploaded",youtube_video_id:videoId,last_error:null}).eq("id",job.id);
       console.log(`Uploaded ${videoId} to ${channel.name}`);
     }catch(error){
