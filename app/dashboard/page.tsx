@@ -24,7 +24,7 @@ export default async function Dashboard(){
       <p className="mt-2 text-zinc-500">{user.email}</p>
 
       <div className="mt-10 grid gap-5 md:grid-cols-4">
-        {[["Connected channels",String(channelCount)],["Active channels",String(activeCount)],["Shorts today","0 / 3"],["Subscription","Not active"]].map(([a,b])=>
+        {[["Connected channels",String(channelCount)],["Active channels",String(activeCount)],["Shorts today","0 / 3"],["Subscription",channels?.some(c=>c.subscriptions?.[0]?.status==="active")?"Active":"Not active"]].map(([a,b])=>
           <div key={a} className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
             <p className="text-sm text-zinc-500">{a}</p>
             <p className="mt-2 text-2xl font-semibold">{b}</p>
