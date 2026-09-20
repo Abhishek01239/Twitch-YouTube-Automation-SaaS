@@ -1,16 +1,24 @@
 name: Process scheduled uploads
+
 on:
   schedule:
-    - cron: "0 * * * *"
+    - cron: "*/15 * * * *"
   workflow_dispatch:
+
+concurrency:
+  group: twitch-youtube-upload-worker
+  cancel-in-progress: false
+
 jobs:
   process:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
       - run: npm install
       - name: Run upload worker
         run: npm run worker
