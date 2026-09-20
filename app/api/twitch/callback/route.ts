@@ -1,4 +1,5 @@
 import {NextResponse} from "next/server";
+import {cookies} from "next/headers";
 import {createClient} from "@/lib/supabase/server";
 import {createClient as createSupabaseAdmin} from "@supabase/supabase-js";
 
@@ -12,11 +13,10 @@ export async function GET(request:Request){
   const {data:{user}}=await supabase.auth.getUser();
   if(!user) return NextResponse.redirect(new URL("/login",request.url));
 
-  const expectedState=(await import("next/headers")).cookies().then(c=>c.get("twitch_oauth_state")?.value);
+  const cookieStore=await cookies();
+  const expectedState=cookieStore.get("twitch_oauth_state")?.value;
   if(error) return NextResponse.redirect(new URL("/dashboard?error=twitch_denied",request.url));
-  if(!code || !state || state!==await expectedState){
-    return NextResponse.redirect(new URL("/dashboard?error=twitch_state",request.url));
-  }
+  if(!code || !state || state!==expectedState) return NextResponse.redirect(new URL("/dashboard?error=twitch_state",request.url));
 
   const clientId=process.env.TWITCH_CLIENT_ID;
   const clientSecret=process.env.TWITCH_CLIENT_SECRET;
@@ -26,28 +26,17 @@ export async function GET(request:Request){
   const tokenResponse=await fetch("https://id.twitch.tv/oauth2/token",{
     method:"POST",
     headers:{"Content-Type":"application/x-www-form-urlencoded"},
-    body:new URLSearchParams({
-      client_id:clientId,
-      client_secret:clientSecret,
-      code,
-      grant_type:"authorization_code",
-      redirect_uri:redirectUri
-    })
+    body:new URLSearchParams({client_id:clientId,client_secret:clientSecret,code,grant_type:"authorization_code",redirect_uri:redirectUri})
   });
   if(!tokenResponse.ok) return NextResponse.redirect(new URL("/dashboard?error=twitch_token",request.url));
 
-  const token=await tokenResponse.json() as {access_token:string;refresh_token:string;expires_in:number};
-  const validateResponse=await fetch("https://id.twitch.tv/oauth2/validate",{
-    headers:{Authorization:`OAuth ${token.access_token}`}
-  });
+  const token=await tokenResponse.json() as {access_token:string;refresh_token:string;expires_in:number;scope?:string[]};
+  const validateResponse=await fetch("https://id.twitch.tv/oauth2/validate",{headers:{Authorization:`OAuth ${token.access_token}`}});
   if(!validateResponse.ok) return NextResponse.redirect(new URL("/dashboard?error=twitch_validate",request.url));
 
-  const identity=await validateResponse.json() as {user_id:string;login:string;expires_in:number};
+  const identity=await validateResponse.json() as {user_id:string;login:string};
   const usersResponse=await fetch(`https://api.twitch.tv/helix/users?id=${encodeURIComponent(identity.user_id)}`,{
-    headers:{
-      "Client-Id":clientId,
-      Authorization:`Bearer ${token.access_token}`
-    }
+    headers:{"Client-Id":clientId,Authorization:`Bearer ${token.access_token}`}
   });
   if(!usersResponse.ok) return NextResponse.redirect(new URL("/dashboard?error=twitch_user",request.url));
 
@@ -55,22 +44,23 @@ export async function GET(request:Request){
   const twitchUser=users.data?.[0];
   if(!twitchUser) return NextResponse.redirect(new URL("/dashboard?error=twitch_user",request.url));
 
-  const admin=createSupabaseAdmin(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-
-  const {error:dbError}=await admin.from("twitch_connections").upsert({
+  const admin=createSupabaseAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!,process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  const {data:connection,error:dbError}=await admin.from("twitch_connections").upsert({
     user_id:user.id,
     twitch_user_id:twitchUser.id,
     twitch_login:twitchUser.login,
-    twitch_display_name:twitchUser.display_name,
-    twitch_access_token:token.access_token,
-    twitch_refresh_token:token.refresh_token,
-    twitch_token_expires_at:new Date(Date.now()+token.expires_in*1000).toISOString()
-  },{onConflict:"user_id"});
+    twitch_display_name:twitchUser.display_name
+  },{onConflict:"user_id"}).select("id").single();
+  if(dbError || !connection) return NextResponse.redirect(new URL("/dashboard?error=twitch_database",request.url));
 
-  if(dbError) return NextResponse.redirect(new URL("/dashboard?error=twitch_database",request.url));
+  const {error:tokenError}=await admin.from("twitch_tokens").upsert({
+    connection_id:connection.id,
+    access_token:token.access_token,
+    refresh_token:token.refresh_token,
+    token_expires_at:new Date(Date.now()+token.expires_in*1000).toISOString(),
+    scopes:token.scope || []
+  });
+  if(tokenError) return NextResponse.redirect(new URL("/dashboard?error=twitch_token_database",request.url));
 
   const response=NextResponse.redirect(new URL("/dashboard?twitch=connected",request.url));
   response.cookies.delete("twitch_oauth_state");
