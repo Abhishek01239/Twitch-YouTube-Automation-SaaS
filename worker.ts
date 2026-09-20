@@ -57,7 +57,7 @@ async function ingestTwitchClips(){
   const clientId=required("TWITCH_CLIENT_ID");
   const start=new Date(Date.now()-DAY).toISOString();
 
-  for(const connection of connections as Array<{id:string;twitch_user_id:string;twitch_display_name:string}>){
+  for(const connection of connections as Array<{id:string;user_id:string;twitch_user_id:string;twitch_display_name:string}>){
     try{
       const {data:rawToken}=await admin.from("twitch_tokens").select("*").eq("connection_id",connection.id).single();
       if(!rawToken)continue;
@@ -190,7 +190,7 @@ async function uploadToYouTube(token:string,source:Source,video:Buffer,contentTy
   const init=await fetch("https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json; charset=UTF-8","X-Upload-Content-Length":String(video.length),"X-Upload-Content-Type":contentType},body:JSON.stringify({snippet:{title,description,tags,categoryId:"20"},status:{privacyStatus:"public",selfDeclaredMadeForKids:false}})});
   if(!init.ok)throw new Error(`YouTube upload session failed: ${init.status} ${await init.text()}`);
   const uploadUrl=init.headers.get("location");if(!uploadUrl)throw new Error("YouTube did not return an upload session URL");
-  const put=await fetch(uploadUrl,{method:"PUT",headers:{Authorization:`Bearer ${token}`,"Content-Type":contentType,"Content-Length":String(video.length),"Content-Range":`bytes 0-${video.length-1}/${video.length}`},body:video});
+  const uploadBody=new ArrayBuffer(video.byteLength); new Uint8Array(uploadBody).set(video); const put=await fetch(uploadUrl,{method:"PUT",headers:{Authorization:`Bearer ${token}`,"Content-Type":contentType,"Content-Length":String(video.length),"Content-Range":`bytes 0-${video.length-1}/${video.length}`},body:uploadBody});
   if(!put.ok)throw new Error(`YouTube video upload failed: ${put.status} ${await put.text()}`);
   const result=await put.json() as {id?:string};if(!result.id)throw new Error("YouTube upload completed without a video id");return result.id;
 }
