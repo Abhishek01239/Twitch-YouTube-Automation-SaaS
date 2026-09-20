@@ -1,6 +1,7 @@
 import {redirect} from "next/navigation";
 import Link from "next/link";
 import {createClient} from "@/lib/supabase/server";
+import BillingButton from "./BillingButton";
 
 export default async function Dashboard(){
   const supabase=await createClient();
@@ -9,7 +10,7 @@ export default async function Dashboard(){
 
   const [{data:twitch},{data:channels}]=await Promise.all([
     supabase.from("twitch_connections").select("twitch_login,twitch_display_name").eq("user_id",user.id).maybeSingle(),
-    supabase.from("channels").select("id,name,youtube_channel_id,status").eq("user_id",user.id).order("created_at",{ascending:true})
+    supabase.from("channels").select("id,name,youtube_channel_id,status,subscriptions(status,current_period_end)").eq("user_id",user.id).order("created_at",{ascending:true})
   ]);
 
   const connected=twitch?.twitch_login;
@@ -52,7 +53,7 @@ export default async function Dashboard(){
             {channels!.map(channel=><div key={channel.id} className="rounded-xl border border-zinc-800 p-4">
               <p className="font-medium">{channel.name}</p>
               <p className="text-sm text-zinc-500">{channel.youtube_channel_id}</p>
-              <p className="mt-1 text-xs uppercase tracking-wide text-zinc-500">{channel.status}</p>
+              <p className="mt-1 text-xs uppercase tracking-wide text-zinc-500">{channel.status}</p>{channel.subscriptions?.[0]?.status==="active" ? <p className="mt-2 text-xs text-emerald-400">Subscription active</p> : <BillingButton channelId={channel.id}/>}
             </div>)}
           </div>}
         </div>
