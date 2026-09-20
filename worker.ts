@@ -107,32 +107,63 @@ async function ingestTwitchClips(){
   }
 }
 
-async function makeVerticalShort(source:Source,video:Buffer){
-  const dir=await fs.mkdtemp(path.join(os.tmpdir(),"twitch-short-"));
-  const input=path.join(dir,"input.mp4");
-  const output=path.join(dir,"output.mp4");
+type TranscriptSegment={start:number;end:number;text:string};
+
+function srtTime(seconds:number){
+  const ms=Math.max(0,Math.round(seconds*1000));
+  const h=Math.floor(ms/3600000),m=Math.floor((ms%3600000)/60000),s=Math.floor((ms%60000)/1000),milli=ms%1000;
+  return String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0")+","+String(milli).padStart(3,"0");
+}
+function makeSrt(segments:TranscriptSegment[]){
+  return segments.filter(s=>s.text?.trim()).map((s,i)=>(i+1)+"\n"+srtTime(s.start)+" --> "+srtTime(Math.max(s.end,s.start+0.5))+"\n"+s.text.trim()+"\n").join("\n");
+}
+async function transcribeWithGroq(video:Buffer){
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),"groq-audio-"));
+  const input=path.join(dir,"input.mp4"),audio=path.join(dir,"audio.mp3");
   try{
     await fs.writeFile(input,video);
-    await new Promise<void>((resolve,reject)=>execFile("ffmpeg",[
-      "-y","-i",input,
-      "-vf","scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1",
-      "-c:v","libx264","-preset","veryfast","-crf","23",
-      "-c:a","aac","-b:a","128k","-movflags","+faststart",output
-    ],{maxBuffer:1024*1024},(error)=>error?reject(error):resolve()));
+    await new Promise<void>((resolve,reject)=>execFile("ffmpeg",["-y","-i",input,"-vn","-ac","1","-ar","16000","-b:a","64k",audio],{maxBuffer:1024*1024},e=>e?reject(e):resolve()));
+    const form=new FormData();
+    form.append("file",new Blob([await fs.readFile(audio)],{type:"audio/mpeg"}),"audio.mp3");
+    form.append("model",process.env.GROQ_WHISPER_MODEL||"whisper-large-v3-turbo");
+    form.append("response_format","verbose_json");
+    form.append("timestamp_granularities[]","segment");
+    form.append("temperature","0");
+    const response=await fetch("https://api.groq.com/openai/v1/audio/transcriptions",{method:"POST",headers:{Authorization:"Bearer "+required("GROQ_API_KEY")},body:form});
+    if(!response.ok)throw new Error("Groq transcription failed: "+response.status+" "+await response.text());
+    const data=await response.json() as {text?:string;segments?:TranscriptSegment[]};
+    return {text:data.text||"",segments:data.segments||[]};
+  }finally{await fs.rm(dir,{recursive:true,force:true});}
+}
+
+async function makeVerticalShort(source:Source,video:Buffer,subtitlePath?:string){
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),"twitch-short-"));
+  const input=path.join(dir,"input.mp4"),output=path.join(dir,"output.mp4");
+  try{
+    await fs.writeFile(input,video);
+    const vf=subtitlePath
+      ?"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,subtitles="+subtitlePath.replace(/\\/g,"/").replace(/:/g,"\\:")+":force_style='FontName=DejaVu Sans,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=120'"
+      :"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1";
+    await new Promise<void>((resolve,reject)=>execFile("ffmpeg",["-y","-i",input,"-vf",vf,"-c:v","libx264","-preset","veryfast","-crf","23","-c:a","aac","-b:a","128k","-movflags","+faststart",output],{maxBuffer:1024*1024},e=>e?reject(e):resolve()));
     return await fs.readFile(output);
-  } finally { await fs.rm(dir,{recursive:true,force:true}); }
+  }finally{await fs.rm(dir,{recursive:true,force:true});}
 }
 
 async function ensureEditedAsset(source:Source,video:Buffer){
   if(source.edited_storage_path)return source.edited_storage_path;
-  const edited=await makeVerticalShort(source,video);
-  const storagePath=source.storage_path?source.storage_path.replace(/^clips\\//,"edited/").replace(/\.mp4$/i,"-9x16.mp4"):
-    `edited/${source.id}-9x16.mp4`;
-  const {error}=await admin.storage.from(SOURCE_BUCKET).upload(storagePath,edited,{contentType:"video/mp4",upsert:true});
-  if(error)throw new Error(`Edited short storage upload failed: ${error.message}`);
-  const {error:updateError}=await admin.from("source_shorts").update({edited_storage_path:storagePath}).eq("id",source.id);
-  if(updateError)throw updateError;
-  return storagePath;
+  const transcript=await transcribeWithGroq(video);
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),"captions-")),srt=path.join(dir,"captions.srt");
+  try{
+    await fs.writeFile(srt,makeSrt(transcript.segments),"utf8");
+    const edited=await makeVerticalShort(source,video,transcript.segments.length?srt:undefined);
+    const storagePath=source.storage_path?source.storage_path.replace(/^clips\\//,"edited/").replace(/\.mp4$/i,"-9x16-captioned.mp4"):"edited/"+source.id+"-9x16-captioned.mp4";
+    const {error}=await admin.storage.from(SOURCE_BUCKET).upload(storagePath,edited,{contentType:"video/mp4",upsert:true});
+    if(error)throw new Error("Edited short storage upload failed: "+error.message);
+    const {error:updateError}=await admin.from("source_shorts").update({edited_storage_path:storagePath}).eq("id",source.id);
+    if(updateError)throw updateError;
+    console.log("Captioned short created for "+source.id+": "+transcript.text.slice(0,120));
+    return storagePath;
+  }finally{await fs.rm(dir,{recursive:true,force:true});}
 }
 
 async function downloadVideo(source:Source){
@@ -209,7 +240,7 @@ async function processDueJobs(){
 }
 
 async function main(){
-  required("NEXT_PUBLIC_SUPABASE_URL");required("SUPABASE_SERVICE_ROLE_KEY");required("GOOGLE_CLIENT_ID");required("GOOGLE_CLIENT_SECRET");required("TWITCH_CLIENT_ID");required("TWITCH_CLIENT_SECRET");
+  required("NEXT_PUBLIC_SUPABASE_URL");required("SUPABASE_SERVICE_ROLE_KEY");required("GOOGLE_CLIENT_ID");required("GOOGLE_CLIENT_SECRET");required("TWITCH_CLIENT_ID");required("TWITCH_CLIENT_SECRET");required("GROQ_API_KEY");
   await ingestTwitchClips();
 
   const {data:channels,error:channelError}=await admin.from("channels").select("id,name,youtube_channel_id,status").eq("status","active");
