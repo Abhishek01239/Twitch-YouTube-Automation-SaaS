@@ -28,13 +28,7 @@ export async function GET(request:Request){
   const tokenResponse=await fetch("https://oauth2.googleapis.com/token",{
     method:"POST",
     headers:{"Content-Type":"application/x-www-form-urlencoded"},
-    body:new URLSearchParams({
-      code,
-      client_id:clientId,
-      client_secret:clientSecret,
-      redirect_uri:redirectUri,
-      grant_type:"authorization_code"
-    })
+    body:new URLSearchParams({code,client_id:clientId,client_secret:clientSecret,redirect_uri:redirectUri,grant_type:"authorization_code"})
   });
   if(!tokenResponse.ok) return NextResponse.redirect(new URL("/dashboard?error=youtube_token",request.url));
   const token=await tokenResponse.json() as TokenResponse;
@@ -47,41 +41,29 @@ export async function GET(request:Request){
   const youtubeChannel=channelData.items?.[0];
   if(!youtubeChannel?.id) return NextResponse.redirect(new URL("/dashboard?error=no_youtube_channel",request.url));
 
-  const admin=createSupabaseAdmin(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-
-  const {data:existing}=await admin.from("channels")
-    .select("id")
-    .eq("user_id",user.id)
-    .eq("youtube_channel_id",youtubeChannel.id)
-    .maybeSingle();
-
+  const admin=createSupabaseAdmin(process.env.NEXT_PUBLIC_SUPABASE_URL!,process.env.SUPABASE_SERVICE_ROLE_KEY!);
+  const {data:existing}=await admin.from("channels").select("id").eq("user_id",user.id).eq("youtube_channel_id",youtubeChannel.id).maybeSingle();
   let channelId=existing?.id as string|undefined;
+
   if(channelId){
-    const {error}=await admin.from("channels").update({
-      name:youtubeChannel.snippet?.title || "YouTube Channel",
-      status:"inactive"
-    }).eq("id",channelId);
+    const {error}=await admin.from("channels").update({name:youtubeChannel.snippet?.title||"YouTube Channel",status:"inactive"}).eq("id",channelId);
     if(error) return NextResponse.redirect(new URL("/dashboard?error=youtube_database",request.url));
   }else{
     const {data:created,error}=await admin.from("channels").insert({
-      user_id:user.id,
-      name:youtubeChannel.snippet?.title || "YouTube Channel",
-      youtube_channel_id:youtubeChannel.id,
-      status:"inactive"
+      user_id:user.id,name:youtubeChannel.snippet?.title||"YouTube Channel",youtube_channel_id:youtubeChannel.id,status:"inactive"
     }).select("id").single();
-    if(error || !created) return NextResponse.redirect(new URL("/dashboard?error=youtube_database",request.url));
+    if(error||!created) return NextResponse.redirect(new URL("/dashboard?error=youtube_database",request.url));
     channelId=created.id;
   }
 
+  const {data:oldToken}=await admin.from("youtube_tokens").select("refresh_token").eq("channel_id",channelId).maybeSingle();
+  const refreshToken=token.refresh_token || oldToken?.refresh_token;
+  if(!refreshToken) return NextResponse.redirect(new URL("/dashboard?error=youtube_refresh_token",request.url));
+
   const {error:tokenError}=await admin.from("youtube_tokens").upsert({
-    channel_id:channelId,
-    access_token:token.access_token,
-    refresh_token:token.refresh_token || "",
+    channel_id:channelId,access_token:token.access_token,refresh_token:refreshToken,
     token_expires_at:new Date(Date.now()+token.expires_in*1000).toISOString(),
-    scopes:(token.scope||"").split(" ").filter(Boolean)
+    scopes:(token.scope||"").split(" ").filter(Boolean),updated_at:new Date().toISOString()
   });
   if(tokenError) return NextResponse.redirect(new URL("/dashboard?error=youtube_token_database",request.url));
 
