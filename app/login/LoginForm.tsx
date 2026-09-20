@@ -1,6 +1,6 @@
 "use client";
 import {useState} from "react";
-import {createClient} from "../../lib/supabase/client";
+import {createClient} from "../../lib/supabase/client"; // direct relative import for Vercel
 export default function LoginForm(){
  const supabase=createClient(); const [email,setEmail]=useState(""); const [password,setPassword]=useState(""); const [mode,setMode]=useState<"login"|"signup">("login"); const [message,setMessage]=useState("");
  async function submit(e:React.FormEvent){e.preventDefault();setMessage("Working...");
