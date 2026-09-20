@@ -1,6 +1,6 @@
 import {NextResponse} from "next/server";
 import {cookies} from "next/headers";
-import {createClient} from "@/lib/supabase/server";
+import {createClient} from "../../../../lib/supabase/server";
 import {createClient as createSupabaseAdmin} from "@supabase/supabase-js";
 
 type TokenResponse={access_token:string;refresh_token?:string;expires_in:number;scope?:string};
