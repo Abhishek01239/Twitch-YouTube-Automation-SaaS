@@ -1,5 +1,6 @@
 import {NextResponse} from "next/server";
 import {createClient} from "../../../../lib/supabase/server";
+import {createClient as createSupabaseAdmin} from "@supabase/supabase-js";
 
 const RAZORPAY_BASE="https://api.razorpay.com/v1";
 
@@ -8,6 +9,13 @@ function authHeader(){
   const keySecret=process.env.RAZORPAY_KEY_SECRET;
   if(!keyId||!keySecret) throw new Error("Razorpay credentials are not configured");
   return "Basic "+Buffer.from(keyId+":"+keySecret).toString("base64");
+}
+
+function adminClient(){
+  const url=process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRole=process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if(!url||!serviceRole) throw new Error("Supabase server credentials are not configured");
+  return createSupabaseAdmin(url,serviceRole,{auth:{persistSession:false,autoRefreshToken:false}});
 }
 
 export async function POST(request:Request){
@@ -51,8 +59,12 @@ export async function POST(request:Request){
       return NextResponse.json({error:payload?.error?.description||"Razorpay subscription creation failed"},{status:502});
     }
 
+    // The subscription table is intentionally server-managed. The authenticated
+    // user can read their own subscription, but cannot insert/update billing state.
+    // Use the service-role client here after the channel ownership check above.
     const currentEnd=payload.current_end ? new Date(payload.current_end*1000).toISOString() : null;
-    const {error:saveError}=await supabase.from("subscriptions").upsert({
+    const admin=adminClient();
+    const {error:saveError}=await admin.from("subscriptions").upsert({
       channel_id:channel.id,
       razorpay_subscription_id:payload.id,
       status:payload.status==="active"?"active":"inactive",
@@ -60,10 +72,14 @@ export async function POST(request:Request){
       current_period_end:currentEnd
     },{onConflict:"channel_id"});
 
-    if(saveError) return NextResponse.json({error:"Subscription was created at Razorpay but could not be saved locally. Contact support."},{status:500});
+    if(saveError){
+      console.error("Failed to save Razorpay subscription locally:",saveError);
+      return NextResponse.json({error:"Subscription was created at Razorpay but could not be saved locally."},{status:500});
+    }
 
     return NextResponse.json({subscriptionId:payload.id,shortUrl:payload.short_url,status:payload.status});
   }catch(error){
+    console.error("Billing subscription error:",error);
     return NextResponse.json({error:error instanceof Error?error.message:"Unexpected error"},{status:500});
   }
 }
