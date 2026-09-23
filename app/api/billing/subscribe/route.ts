@@ -4,10 +4,23 @@ import {createClient as createSupabaseAdmin} from "@supabase/supabase-js";
 
 const RAZORPAY_BASE="https://api.razorpay.com/v1";
 
-function authHeader(){
+type RazorpaySubscription={
+  id:string;
+  status:string;
+  short_url?:string|null;
+  current_end?:number|null;
+  plan_id?:string;
+};
+
+function getCredentials(){
   const keyId=process.env.RAZORPAY_KEY_ID;
   const keySecret=process.env.RAZORPAY_KEY_SECRET;
   if(!keyId||!keySecret) throw new Error("Razorpay credentials are not configured");
+  return {keyId,keySecret};
+}
+
+function authHeader(){
+  const {keyId,keySecret}=getCredentials();
   return "Basic "+Buffer.from(keyId+":"+keySecret).toString("base64");
 }
 
@@ -18,68 +31,161 @@ function adminClient(){
   return createSupabaseAdmin(url,serviceRole,{auth:{persistSession:false,autoRefreshToken:false}});
 }
 
+function localStatus(status:string){
+  if(status==="active") return "active";
+  if(status==="paused"||status==="pending"||status==="halted") return "paused";
+  if(status==="cancelled") return "cancelled";
+  if(status==="completed"||status==="expired") return "expired";
+  return "inactive";
+}
+
+async function razorpayRequest(path:string,init:RequestInit={}){
+  const response=await fetch(RAZORPAY_BASE+path,{
+    ...init,
+    headers:{
+      Authorization:authHeader(),
+      "Content-Type":"application/json",
+      ...(init.headers||{})
+    },
+    cache:"no-store"
+  });
+  const payload=await response.json().catch(()=>({}));
+  return {response,payload};
+}
+
 export async function POST(request:Request){
   try{
     const supabase=await createClient();
     const {data:{user}}=await supabase.auth.getUser();
     if(!user) return NextResponse.json({error:"Unauthorized"},{status:401});
 
-    const {channelId}=await request.json();
-    if(typeof channelId!=="string") return NextResponse.json({error:"channelId is required"},{status:400});
+    const body=await request.json().catch(()=>null);
+    const channelId=body?.channelId;
+    if(typeof channelId!=="string"||!channelId) {
+      return NextResponse.json({error:"channelId is required"},{status:400});
+    }
 
     const {data:channel,error:channelError}=await supabase
-      .from("channels").select("id,name").eq("id",channelId).eq("user_id",user.id).maybeSingle();
+      .from("channels")
+      .select("id,name")
+      .eq("id",channelId)
+      .eq("user_id",user.id)
+      .maybeSingle();
     if(channelError||!channel) return NextResponse.json({error:"Channel not found"},{status:404});
 
-    const {data:existing}=await supabase.from("subscriptions")
+    const {data:existing,error:existingError}=await supabase
+      .from("subscriptions")
       .select("razorpay_subscription_id,status,current_period_end")
-      .eq("channel_id",channel.id).maybeSingle();
+      .eq("channel_id",channel.id)
+      .maybeSingle();
+    if(existingError) {
+      console.error("Subscription lookup failed:",existingError);
+      return NextResponse.json({error:"Unable to read subscription status"},{status:500});
+    }
 
-    if(existing?.status==="active" && existing.current_period_end && new Date(existing.current_period_end)>new Date()){
-      return NextResponse.json({error:"This channel already has an active subscription"},{status:409});
+    if(existing?.status==="active"){
+      if(!existing.current_period_end||new Date(existing.current_period_end)>new Date()){
+        return NextResponse.json({error:"This channel already has an active subscription"},{status:409});
+      }
+    }
+
+    // If a previous checkout was started but not completed, reuse its Razorpay
+    // subscription instead of creating duplicate recurring subscriptions.
+    if(existing?.razorpay_subscription_id && ["inactive","paused"].includes(existing.status)){
+      const {response,payload}=await razorpayRequest("/subscriptions/"+encodeURIComponent(existing.razorpay_subscription_id));
+      if(response.ok){
+        const remote=payload as RazorpaySubscription;
+        const mapped=localStatus(remote.status);
+        const currentEnd=remote.current_end?new Date(remote.current_end*1000).toISOString():null;
+
+        if(remote.status==="active"){
+          const admin=adminClient();
+          await admin.from("subscriptions").update({status:"active",current_period_end:currentEnd}).eq("channel_id",channel.id);
+          await admin.from("channels").update({status:"active"}).eq("id",channel.id);
+          return NextResponse.json({error:"This channel already has an active subscription"},{status:409});
+        }
+
+        if(["created","authenticated","pending"].includes(remote.status) && remote.short_url){
+          const admin=adminClient();
+          await admin.from("subscriptions").update({status:mapped,current_period_end:currentEnd}).eq("channel_id",channel.id);
+          return NextResponse.json({
+            subscriptionId:remote.id,
+            shortUrl:remote.short_url,
+            status:remote.status,
+            reused:true
+          });
+        }
+      }
+      // A missing/terminal remote subscription can safely be replaced below.
     }
 
     const planId=process.env.RAZORPAY_PLAN_ID;
-    if(!planId) return NextResponse.json({error:"RAZORPAY_PLAN_ID is not configured. Create the ₹99/month plan in Razorpay and add its plan ID as a GitHub/Vercel secret."},{status:500});
+    if(!planId){
+      return NextResponse.json({
+        error:"RAZORPAY_PLAN_ID is not configured. Add the Razorpay ₹99/month plan ID to Vercel Production."
+      },{status:500});
+    }
 
-    const response=await fetch(RAZORPAY_BASE+"/subscriptions",{
+    const {response,payload}=await razorpayRequest("/subscriptions",{
       method:"POST",
-      headers:{"Authorization":authHeader(),"Content-Type":"application/json"},
       body:JSON.stringify({
         plan_id:planId,
-        total_count:120,
+        // 1,200 monthly cycles = 100 years, within Razorpay's maximum duration.
+        total_count:1200,
         quantity:1,
-        customer_notify:1,
-        notes:{channel_id:channel.id,user_id:user.id,channel_name:channel.name}
+        customer_notify:true,
+        notes:{
+          channel_id:channel.id,
+          user_id:user.id,
+          channel_name:channel.name
+        }
       })
     });
 
-    const payload=await response.json();
     if(!response.ok){
-      return NextResponse.json({error:payload?.error?.description||"Razorpay subscription creation failed"},{status:502});
+      const description=payload?.error?.description||"Razorpay subscription creation failed";
+      console.error("Razorpay subscription creation failed:",{
+        status:response.status,
+        code:payload?.error?.code,
+        description,
+        keyPrefix:getCredentials().keyId.slice(0,8),
+        planId
+      });
+      return NextResponse.json({error:description},{status:response.status===401?502:502});
     }
 
-    // The subscription table is intentionally server-managed. The authenticated
-    // user can read their own subscription, but cannot insert/update billing state.
-    // Use the service-role client here after the channel ownership check above.
-    const currentEnd=payload.current_end ? new Date(payload.current_end*1000).toISOString() : null;
+    const created=payload as RazorpaySubscription;
+    if(!created.id||!created.short_url){
+      console.error("Razorpay returned an incomplete subscription:",payload);
+      return NextResponse.json({error:"Razorpay did not return a valid subscription checkout URL."},{status:502});
+    }
+
+    const currentEnd=created.current_end?new Date(created.current_end*1000).toISOString():null;
     const admin=adminClient();
     const {error:saveError}=await admin.from("subscriptions").upsert({
       channel_id:channel.id,
-      razorpay_subscription_id:payload.id,
-      status:payload.status==="active"?"active":"inactive",
+      razorpay_subscription_id:created.id,
+      status:localStatus(created.status),
       amount_paise:9900,
       current_period_end:currentEnd
     },{onConflict:"channel_id"});
 
     if(saveError){
       console.error("Failed to save Razorpay subscription locally:",saveError);
-      return NextResponse.json({error:"Subscription was created at Razorpay but could not be saved locally."},{status:500});
+      return NextResponse.json({
+        error:"Subscription was created at Razorpay but could not be saved locally. Please contact support before retrying."
+      },{status:500});
     }
 
-    return NextResponse.json({subscriptionId:payload.id,shortUrl:payload.short_url,status:payload.status});
+    return NextResponse.json({
+      subscriptionId:created.id,
+      shortUrl:created.short_url,
+      status:created.status
+    });
   }catch(error){
     console.error("Billing subscription error:",error);
-    return NextResponse.json({error:error instanceof Error?error.message:"Unexpected error"},{status:500});
+    return NextResponse.json({
+      error:error instanceof Error?error.message:"Unexpected billing error"
+    },{status:500});
   }
 }
