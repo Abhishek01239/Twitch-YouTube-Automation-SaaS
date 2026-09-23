@@ -126,6 +126,28 @@ export async function POST(request:Request){
       },{status:500});
     }
 
+    // Validate that the configured Razorpay plan is the expected ₹99/month plan
+    // before creating a new recurring subscription.
+    const {response:planResponse,payload:planPayload}=await razorpayRequest("/plans/"+encodeURIComponent(planId));
+    if(!planResponse.ok){
+      console.error("Razorpay plan lookup failed:",{
+        status:planResponse.status,
+        code:planPayload?.error?.code,
+        description:planPayload?.error?.description,
+        planId
+      });
+      return NextResponse.json({
+        error:"The configured Razorpay plan could not be found in the current Razorpay mode. Check that RAZORPAY_PLAN_ID belongs to the same Test/Live account as the API keys."
+      },{status:502});
+    }
+
+    const plan=planPayload as {id:string;active?:boolean;period?:string;interval?:number;item?:{amount?:number;currency?:string}};
+    if(plan.active===false||plan.period!=="monthly"||plan.interval!==1||plan.item?.amount!==9900||plan.item?.currency!=="INR"){
+      return NextResponse.json({
+        error:"RAZORPAY_PLAN_ID is not the expected active ₹99/month INR plan."
+      },{status:502});
+    }
+
     const {response,payload}=await razorpayRequest("/subscriptions",{
       method:"POST",
       body:JSON.stringify({
@@ -151,7 +173,7 @@ export async function POST(request:Request){
         keyPrefix:getCredentials().keyId.slice(0,8),
         planId
       });
-      return NextResponse.json({error:description},{status:response.status===401?502:502});
+      return NextResponse.json({error:description},{status:502});
     }
 
     const created=payload as RazorpaySubscription;
