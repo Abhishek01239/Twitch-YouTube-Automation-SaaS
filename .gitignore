@@ -4,3 +4,6 @@ node_modules
 .env.local
 .env.*.local
 .vercel
+
+# Rendered media exports (large binaries, not source)
+output/
