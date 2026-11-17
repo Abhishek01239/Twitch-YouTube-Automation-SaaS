@@ -1,0 +1,664 @@
+{
+ "source": "01_source/original_cloudinary_360p.mp4",
+ "fonts": {
+  "title": "Inter Display Black",
+  "ui": "Inter Display SemiBold",
+  "caption": "Inter ExtraBold"
+ },
+ "grain": true,
+ "clips": [
+  {
+   "label": "disclaimer",
+   "in": 0.0,
+   "out": 3.0,
+   "grade": "none",
+   "fade_out": 0.3
+  },
+  {
+   "label": "cold: running in the dark",
+   "in": 772.0,
+   "out": 774.5,
+   "grade": "night",
+   "zoom": 0.07,
+   "fade_in": 0.15
+  },
+  {
+   "label": "cold: friend found crouched",
+   "in": 790.0,
+   "out": 793.0,
+   "grade": "night",
+   "zoom": 0.1
+  },
+  {
+   "label": "cold: panic",
+   "in": 800.0,
+   "out": 802.3,
+   "grade": "night",
+   "zoom": -0.06
+  },
+  {
+   "label": "cold: dropped phone (slow-mo)",
+   "in": 991.4,
+   "out": 993.2,
+   "grade": "night",
+   "speed": 0.5,
+   "slowmo": true,
+   "fade_out": 0.6,
+   "zoom": 0.05
+  },
+  {
+   "label": "hook card",
+   "in": 0,
+   "out": 4.5,
+   "card": 4.5,
+   "text": [
+    {
+     "style": "Kicker",
+     "t": "They call it Khali Khandahar\\N{\\alpha&HFF&}because no living soul remains.",
+     "at": 0.3,
+     "dur": 3.9
+    },
+    {
+     "style": "Kicker",
+     "t": "{\\alpha&HFF&}They call it Khali Khandahar\\N{\\alpha&H00&}because no living soul remains.",
+     "at": 1.6,
+     "dur": 2.6
+    }
+   ]
+  },
+  {
+   "label": "opening credits + title",
+   "in": 3.0,
+   "out": 22.6,
+   "grade": "none",
+   "fade_in": 0.4,
+   "orig_gain_db": -3
+  },
+  {
+   "label": "temple vlog: sky",
+   "in": 23.0,
+   "out": 27.0,
+   "grade": "day",
+   "speed": 1.25,
+   "fade_in": 0.3,
+   "text": [
+    {
+     "style": "ChapterNum",
+     "t": "CHAPTER 01",
+     "at": 0.4,
+     "dur": 3.6
+    },
+    {
+     "style": "Chapter",
+     "t": "THE CHANNEL",
+     "at": 0.4,
+     "dur": 3.6
+    }
+   ]
+  },
+  {
+   "label": "temple vlog: intro to camera",
+   "in": 27.75,
+   "out": 42.25,
+   "grade": "day",
+   "zoom": 0.04,
+   "captions": [
+    {
+     "s": 35.6,
+     "e": 37.8,
+     "t": "Let's see what's inside the temple."
+    }
+   ]
+  },
+  {
+   "label": "walk around the rocks (ramp)",
+   "in": 61.3,
+   "out": 68.9,
+   "grade": "day",
+   "speed": 1.6,
+   "orig_gain_db": -6
+  },
+  {
+   "label": "heading home (ramp)",
+   "in": 70.4,
+   "out": 77.6,
+   "grade": "day",
+   "speed": 1.6,
+   "orig_gain_db": -6
+  },
+  {
+   "label": "laptop set-up (ramp)",
+   "in": 78.0,
+   "out": 86.0,
+   "grade": "room",
+   "speed": 1.6
+  },
+  {
+   "label": "checking the channel",
+   "in": 103.75,
+   "out": 125.75,
+   "grade": "room",
+   "zoom": 0.05
+  },
+  {
+   "label": "friends arrive / views talk",
+   "in": 128.75,
+   "out": 148.25,
+   "grade": "room",
+   "zoom": -0.04
+  },
+  {
+   "label": "close-up reactions",
+   "in": 235.25,
+   "out": 245.75,
+   "grade": "room",
+   "zoom": 0.04
+  },
+  {
+   "label": "the plan: you three go",
+   "in": 252.25,
+   "out": 262.75,
+   "grade": "room",
+   "zoom": -0.04
+  },
+  {
+   "label": "the plan continues",
+   "in": 265.75,
+   "out": 279.75,
+   "grade": "room",
+   "zoom": 0.05
+  },
+  {
+   "label": "leaving the room",
+   "in": 303.75,
+   "out": 311.75,
+   "grade": "room",
+   "fade_out": 0.5
+  },
+  {
+   "label": "wide walk (ramp)",
+   "in": 316.0,
+   "out": 331.0,
+   "grade": "dusk",
+   "speed": 1.6,
+   "orig_gain_db": -10,
+   "fade_in": 0.4,
+   "text": [
+    {
+     "style": "ChapterNum",
+     "t": "CHAPTER 02",
+     "at": 0.4,
+     "dur": 3.6
+    },
+    {
+     "style": "Chapter",
+     "t": "THE ROAD",
+     "at": 0.4,
+     "dur": 3.6
+    }
+   ]
+  },
+  {
+   "label": "on the road",
+   "in": 331.75,
+   "out": 341.75,
+   "grade": "dusk",
+   "speed": 1.25,
+   "orig_gain_db": -6
+  },
+  {
+   "label": "road walk (ramp)",
+   "in": 343.0,
+   "out": 355.8,
+   "grade": "dusk",
+   "speed": 1.6,
+   "orig_gain_db": -10
+  },
+  {
+   "label": "feet on gravel (slow-mo)",
+   "in": 356.2,
+   "out": 358.6,
+   "grade": "dusk",
+   "speed": 0.6,
+   "slowmo": true,
+   "mute": true
+  },
+  {
+   "label": "walking talk",
+   "in": 361.75,
+   "out": 375.75,
+   "grade": "dusk",
+   "zoom": 0.04
+  },
+  {
+   "label": "is this the house?",
+   "in": 385.75,
+   "out": 401.25,
+   "grade": "dusk",
+   "zoom": 0.05,
+   "captions": [
+    {
+     "s": 385.6,
+     "e": 387.8,
+     "t": "Look — is this the house we were talking about?"
+    },
+    {
+     "s": 387.9,
+     "e": 389.3,
+     "t": "Yeah, that's the one."
+    },
+    {
+     "s": 390.2,
+     "e": 392.7,
+     "t": "I'll start filming."
+    }
+   ]
+  },
+  {
+   "label": "the old man",
+   "in": 403.75,
+   "out": 433.25,
+   "grade": "dusk",
+   "zoom": -0.04,
+   "captions": [
+    {
+     "s": 406.1,
+     "e": 407.4,
+     "t": "Hey, dada — what happened?"
+    },
+    {
+     "s": 411.2,
+     "e": 413.0,
+     "t": "Kids, what are you doing here?"
+    },
+    {
+     "s": 413.2,
+     "e": 414.6,
+     "t": "We just want to make a video."
+    }
+   ]
+  },
+  {
+   "label": "the building reveal",
+   "in": 474.75,
+   "out": 490.75,
+   "grade": "dusk",
+   "zoom": 0.1
+  },
+  {
+   "label": "approach (ramp)",
+   "in": 493.0,
+   "out": 505.0,
+   "grade": "dusk",
+   "speed": 1.5,
+   "orig_gain_db": -6,
+   "fade_out": 0.6
+  },
+  {
+   "label": "entering the ruins",
+   "in": 513.25,
+   "out": 540.75,
+   "grade": "night",
+   "fade_in": 0.6,
+   "text": [
+    {
+     "style": "ChapterNum",
+     "t": "CHAPTER 03",
+     "at": 0.4,
+     "dur": 3.6
+    },
+    {
+     "style": "Chapter",
+     "t": "INSIDE",
+     "at": 0.4,
+     "dur": 3.6
+    }
+   ]
+  },
+  {
+   "label": "the staircase",
+   "in": 550.75,
+   "out": 575.25,
+   "grade": "night",
+   "zoom": 0.05
+  },
+  {
+   "label": "upstairs",
+   "in": 589.75,
+   "out": 602.75,
+   "grade": "night",
+   "zoom": -0.04
+  },
+  {
+   "label": "searching the walls",
+   "in": 603.75,
+   "out": 615.75,
+   "grade": "night",
+   "zoom": 0.05
+  },
+  {
+   "label": "separating",
+   "in": 655.75,
+   "out": 670.75,
+   "grade": "night",
+   "zoom": 0.05
+  },
+  {
+   "label": "the window",
+   "in": 687.75,
+   "out": 708.75,
+   "grade": "night",
+   "zoom": 0.04
+  },
+  {
+   "label": "alone",
+   "in": 710.75,
+   "out": 734.75,
+   "grade": "night",
+   "zoom": 0.06
+  },
+  {
+   "label": "something is wrong",
+   "in": 734.75,
+   "out": 760.75,
+   "grade": "night",
+   "zoom": -0.05
+  },
+  {
+   "label": "the run",
+   "in": 760.3,
+   "out": 789.6,
+   "grade": "night",
+   "captions": [
+    {
+     "s": 774.1,
+     "e": 774.7,
+     "t": "Sumant?"
+    },
+    {
+     "s": 774.8,
+     "e": 776.0,
+     "t": "You go this way, okay?"
+    },
+    {
+     "s": 782.9,
+     "e": 784.0,
+     "t": "Is Sumant here?"
+    },
+    {
+     "s": 784.1,
+     "e": 785.6,
+     "t": "Hey, he's over here!"
+    }
+   ]
+  },
+  {
+   "label": "found in the corner",
+   "in": 789.6,
+   "out": 830.0,
+   "grade": "night",
+   "zoom": 0.04,
+   "captions": [
+    {
+     "s": 804.6,
+     "e": 806.5,
+     "t": "I don't know... he was right behind me."
+    },
+    {
+     "s": 807.9,
+     "e": 810.9,
+     "t": "I'll go upstairs. Don't leave him alone, okay?"
+    }
+   ]
+  },
+  {
+   "label": "after",
+   "in": 848.75,
+   "out": 862.75,
+   "grade": "night",
+   "zoom": 0.05
+  },
+  {
+   "label": "the escape begins",
+   "in": 907.8,
+   "out": 930.3,
+   "grade": "night",
+   "text": [
+    {
+     "style": "ChapterNum",
+     "t": "CHAPTER 04",
+     "at": 0.4,
+     "dur": 3.6
+    },
+    {
+     "style": "Chapter",
+     "t": "THE WAY OUT",
+     "at": 0.4,
+     "dur": 3.6
+    }
+   ]
+  },
+  {
+   "label": "outside, in the dark",
+   "in": 930.3,
+   "out": 961.0,
+   "grade": "night",
+   "zoom": 0.03
+  },
+  {
+   "label": "we have to take him",
+   "in": 966.5,
+   "out": 978.0,
+   "grade": "night",
+   "zoom": 0.04
+  },
+  {
+   "label": "climax",
+   "in": 978.0,
+   "out": 1038.6,
+   "grade": "night",
+   "captions": [
+    {
+     "s": 981.9,
+     "e": 982.8,
+     "t": "What happened?"
+    },
+    {
+     "s": 987.2,
+     "e": 988.8,
+     "t": "Hey, what happened? Ansh? Ansh?"
+    },
+    {
+     "s": 1032.0,
+     "e": 1032.6,
+     "t": "Ansh?"
+    }
+   ]
+  },
+  {
+   "label": "the last shot",
+   "in": 1038.6,
+   "out": 1049.6,
+   "grade": "night",
+   "fade_out": 0.8
+  },
+  {
+   "label": "end card",
+   "in": 0,
+   "out": 5.0,
+   "card": 5.0,
+   "text": [
+    {
+     "style": "Kicker",
+     "t": "A film by Team Boys",
+     "at": 0.4,
+     "dur": 4.2
+    }
+   ]
+  }
+ ],
+ "music": [
+  {
+   "file": "music/bed_climax_heartbeat_112bpm.wav",
+   "clip": 1,
+   "end_clip": 4,
+   "gain_db": -16,
+   "fade_in": 0.3,
+   "fade_out": 1.0
+  },
+  {
+   "file": "music/bed_dark_ambient_loop.wav",
+   "clip": 5,
+   "end_clip": 6,
+   "gain_db": -18,
+   "fade_in": 1.0,
+   "fade_out": 2.0
+  },
+  {
+   "file": "music/bed_dark_ambient_loop.wav",
+   "clip": 12,
+   "end_clip": 17,
+   "gain_db": -26,
+   "fade_in": 3.0,
+   "fade_out": 2.0,
+   "offset": 10
+  },
+  {
+   "file": "music/bed_dusk_pulse_84bpm.wav",
+   "clip": 18,
+   "end_clip": 26,
+   "gain_db": -17,
+   "fade_in": 1.0,
+   "fade_out": 2.0
+  },
+  {
+   "file": "music/bed_dark_ambient_loop.wav",
+   "clip": 27,
+   "end_clip": 34,
+   "gain_db": -19,
+   "fade_in": 3.0,
+   "fade_out": 3.0
+  },
+  {
+   "file": "music/bed_climax_heartbeat_112bpm.wav",
+   "clip": 38,
+   "end_clip": 41,
+   "gain_db": -20,
+   "fade_in": 4.0,
+   "fade_out": 3.0
+  },
+  {
+   "file": "music/bed_dark_ambient_loop.wav",
+   "clip": 42,
+   "end_clip": 43,
+   "gain_db": -16,
+   "fade_in": 0.5,
+   "fade_out": 2.5,
+   "offset": 30
+  }
+ ],
+ "sfx": [
+  {
+   "file": "sfx/sub_hit.wav",
+   "clip": 1,
+   "clip_at": 0.0,
+   "gain_db": -6
+  },
+  {
+   "file": "sfx/sub_hit.wav",
+   "clip": 2,
+   "clip_at": 0.0,
+   "gain_db": -6
+  },
+  {
+   "file": "sfx/sub_hit.wav",
+   "clip": 3,
+   "clip_at": 0.0,
+   "gain_db": -6
+  },
+  {
+   "file": "sfx/static_glitch.wav",
+   "clip": 4,
+   "clip_at": 0.0,
+   "gain_db": -10
+  },
+  {
+   "file": "sfx/riser_4s.wav",
+   "clip": 4,
+   "clip_at": -0.4,
+   "gain_db": -9
+  },
+  {
+   "file": "sfx/impact_braam.wav",
+   "clip": 5,
+   "clip_at": 0.0,
+   "gain_db": -5
+  },
+  {
+   "file": "sfx/reverse_swell.wav",
+   "clip": 6,
+   "clip_at": 14.5,
+   "gain_db": -9
+  },
+  {
+   "file": "sfx/impact_braam.wav",
+   "clip": 6,
+   "clip_at": 17.0,
+   "gain_db": -8
+  },
+  {
+   "file": "sfx/whoosh.wav",
+   "clip": 7,
+   "clip_at": 0.0,
+   "gain_db": -12
+  },
+  {
+   "file": "sfx/whoosh.wav",
+   "clip": 17,
+   "clip_at": 6.0,
+   "gain_db": -10
+  },
+  {
+   "file": "sfx/heartbeat.wav",
+   "clip": 24,
+   "clip_at": 3.0,
+   "gain_db": -12
+  },
+  {
+   "file": "sfx/reverse_swell.wav",
+   "clip": 25,
+   "clip_at": 0.0,
+   "gain_db": -10
+  },
+  {
+   "file": "sfx/sub_hit.wav",
+   "clip": 25,
+   "clip_at": 2.5,
+   "gain_db": -8
+  },
+  {
+   "file": "sfx/whoosh.wav",
+   "clip": 27,
+   "clip_at": 0.0,
+   "gain_db": -12
+  },
+  {
+   "file": "sfx/heartbeat.wav",
+   "clip": 33,
+   "clip_at": 10.0,
+   "gain_db": -10
+  },
+  {
+   "file": "sfx/sub_hit.wav",
+   "clip": 41,
+   "clip_at": 13.3,
+   "gain_db": -6
+  },
+  {
+   "file": "sfx/impact_braam.wav",
+   "clip": 42,
+   "clip_at": 3.9,
+   "gain_db": -6
+  }
+ ]
+}

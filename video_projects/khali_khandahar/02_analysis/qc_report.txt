@@ -1,0 +1,49 @@
+file: /home/user/video_project/06_final/Final_Edited_Video.mp4  size 587.5 MB
+video: h264 1920x1080 30/1 fps, yuv420p, dur 655.367s
+audio: aac 48000 Hz 2ch, dur 655.342s
+A/V duration difference: 25 ms -> OK
+full decode errors: 0
+black segments >=0.4s: 12
+   black    10.83 ->    11.67
+   black    12.13 ->    19.00
+   black   396.43 ->   396.90
+   black   592.07 ->   592.60
+   black   592.77 ->   594.87
+   black   595.27 ->   595.80
+   black   599.67 ->   600.13
+   black   600.50 ->   601.63
+   black   606.80 ->   607.63
+   black   608.00 ->   608.47
+   black   638.73 ->   642.23
+   black   650.23 ->   655.33
+frozen segments >=3s: 1 ['651']
+loudness: integrated -14.7 LUFS, true peak -1.2 dBFS, LRA 12.0 LU
+spell check (aspell): unknown words = ['Ansh', 'Khali', 'Khandahar', 'Sumant', 'dada']
+on-screen text (27 events):
+   They call it Khali Khandahar because no living soul remains.
+   They call it Khali Khandahar because no living soul remains.
+   CHAPTER 01
+   THE CHANNEL
+   Let's see what's inside the temple.
+   CHAPTER 02
+   THE ROAD
+   Look — is this the house we were talking about?
+   Yeah, that's the one.
+   I'll start filming.
+   Hey, dada — what happened?
+   Kids, what are you doing here?
+   We just want to make a video.
+   CHAPTER 03
+   INSIDE
+   Sumant?
+   You go this way, okay?
+   Is Sumant here?
+   Hey, he's over here!
+   I don't know... he was right behind me.
+   I'll go upstairs. Don't leave him alone, okay?
+   CHAPTER 04
+   THE WAY OUT
+   What happened?
+   Hey, what happened? Ansh? Ansh?
+   Ansh?
+   A film by Team Boys

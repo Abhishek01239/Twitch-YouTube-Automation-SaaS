@@ -1,0 +1,3 @@
+BPM=84
+beat_seconds=0.714286
+bars=16

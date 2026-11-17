@@ -1,0 +1,116 @@
+KHALI KHANDAHAR — EDITING SUMMARY
+=================================
+
+SOURCE
+------
+- Requested URL: https://youtu.be/JIDsOJYMxJQ  ("Khali Khandahar", channel: SRA VLOGGER,
+  uploaded 2026-03-04, 17:30, 4K60, standard YouTube licence).
+- YouTube refused the download from this cloud server (HTTP 403 after a "confirm you're not a
+  bot" check). This was NOT bypassed. The user then supplied the same video via their Cloudinary
+  folder "ChatGPT image" (They-call-it-SnapYT.App.mp4).
+- Source used: 01_source/original_cloudinary_360p.mp4  (H.264 640x360 30 fps, AAC stereo,
+  1049.7 s). Kept read-only, never overwritten. YouTube metadata + thumbnail saved alongside.
+- NOTE: the only available copy is 360p, so the 1080p export is an upscale (denoise -> Lanczos
+  3x -> sharpen). It is cleaner than the source but cannot add real detail.
+
+WHAT THE VIDEO IS (from inspecting every section: contact sheets, loudness map, transcript)
+-----------------------------------------------------------------------------------------
+A Hindi-language found-footage horror short made by a group of friends ("Team Boys").
+ 0:00  creator's safety disclaimer, cinematic credits, "Khali Khandahar" title
+ 0:23  a YouTuber films at a caged roadside temple
+ 1:16  at home: his channel isn't getting views; friends arrive, they plan to go to the ruins
+ 5:15  the group walks out at dusk; an old local man asks what they're doing there
+ 8:30  they enter the abandoned brick building as night falls and split up
+11:50  scares begin; Sumant is found crouched in a corner (13:10)
+15:30  they try to leave; a dropped phone keeps recording; Ansh collapses; they carry him out
+17:20  twist: one of them stares back with scarred, red eyes; title card
+
+Weak spots found: long laptop/room stretch (1:16-5:10), long uneventful walking, ~2.5 min of
+near-silent wandering inside (8:00-11:30), a "like/share/subscribe" pitch at 0:41.
+Audience: Indian horror / vlog viewers (Hindi). Format chosen: 16:9 1920x1080 long-form —
+the footage is wide group shots; a 9:16 crop would cut people out of frame.
+
+THE EDIT (17:30 -> 10:55)
+--------------------------
+Structure
+ 1. Creator's disclaimer (kept — it's their safety notice).
+ 2. COLD OPEN hook (~11 s): four flashes from the night — running in the dark, the friend found
+    in the corner, the panic, and the dropped phone in motion-interpolated slow motion — each
+    hit with a sub-boom, then a riser into a black card with the creator's own logline:
+    "They call it Khali Khandahar / because no living soul remains."
+ 3. Original opening credits + title (kept intact, credited cast/crew), braam on the title.
+ 4. CHAPTER 01 THE CHANNEL — temple vlog (subscribe pitch removed), walking speed-ramped 1.6x,
+    room scene condensed from ~4 min to ~1.5 min.
+ 5. CHAPTER 02 THE ROAD — dusk walk cut to an 84 BPM pulse, speed ramps on wide walking shots,
+    slow-motion feet-on-gravel beat, "is this the house?" moment, the old man confrontation,
+    push-in on the building reveal with reverse swell + sub hit.
+ 6. CHAPTER 03 INSIDE — exploration tightened (dead air removed), heartbeat SFX as they split
+    up, scares and the corner discovery kept almost whole.
+ 7. CHAPTER 04 THE WAY OUT — escape and climax kept nearly intact (it is the payoff), the
+    creator's own strobe/glitch effects untouched, the final twist shot + title, end card.
+
+Techniques
+ - Cuts: chosen from the footage, then snapped to the quietest half-second within +/-0.75 s so
+   no word is chopped; 20-30 ms audio fades on every cut (no clicks).
+ - Jump cuts inside long takes are hidden with alternating subtle push-ins / pull-outs
+   (4-10%); no flashy transitions — hard cuts, a few dips to black between acts, whooshes
+   only on chapter changes.
+ - Speed ramps 1.25-1.6x on walking; slow motion 0.5-0.6x with motion-compensated frame
+   interpolation (no stutter).
+ - Colour grade per scene: day (warm, gently desaturated), room (tamed magenta walls, cooler),
+   dusk (teal shadows / warm highlights), night (cold, desaturated, slightly lifted shadows);
+   vignette + fine film grain over everything for a consistent cinematic look.
+ - Motion graphics: chapter lower-thirds that slide in, title cards with slow tracking.
+ - Captions: animated pop-in English subtitles ONLY for lines whose meaning was clear in the
+   Whisper transcript (e.g. "Kids, what are you doing here?", "Is Sumant here?",
+   "Don't leave him alone, okay?"). The Hindi transcript was too unreliable for verbatim
+   captions everywhere, so unclear dialogue was left uncaptioned rather than invented.
+
+AUDIO
+-----
+ - Dialogue: 80 Hz high-pass, FFT noise reduction, 3 kHz presence lift, gentle compression.
+ - Music: three ORIGINAL beds synthesized from scratch in Python (no third-party music, so no
+   copyright risk): dark ambient drone, 84 BPM dusk pulse, 112 BPM heartbeat climax bed.
+   Music is side-chain ducked under dialogue automatically.
+ - SFX (also synthesized): riser, braam impact, sub hit, whoosh, static glitch, heartbeat,
+   reverse swell — placed on the hook, title, reveals and scares.
+ - Master: limiter + EBU R128 loudness normalisation to -14 LUFS (YouTube's target).
+
+QUALITY CONTROL
+---------------
+See 02_analysis/qc_report.txt (full decode, A/V sync, black/frozen frame detection, loudness,
+caption spell check) and 02_analysis/final_contact_sheet_*.jpg.
+Final results (Final_Edited_Video.mp4):
+ - H.264 High 1920x1080 30 fps yuv420p, AAC 48 kHz stereo 256k, 655.4 s (10:55), 587.5 MB
+   (~7 Mbps, capped at 12 Mbps), +faststart for web playback.
+ - Full decode: 0 errors.   A/V duration difference: 25 ms.
+ - Loudness: -14.7 LUFS integrated, -1.2 dBFS true peak, LRA 12 LU.
+ - Black-frame scan: every black segment is intentional — the dark dropped-phone shot, the
+   black hook / end cards (text on black), one 0.5 s flashlight-off beat in the original
+   footage (6:36), the creator's own strobe/blackout effects in the climax (9:52-10:08) and
+   the original blackout before the twist (10:39). No accidental black frames.
+ - Frozen-frame scan: only the static end card.
+ - Caption spell check (aspell): no errors; flagged words are names only
+   (Khali, Khandahar, Sumant, Ansh, dada).
+Fixes made after the first QC pass:
+ - first export was 2.1 GB (grain + high CRF) -> lighter grain, CRF 19, 12 Mbps cap.
+ - hook / end card text too small -> enlarged.
+ - caption "Hey grandpa" over-translated "दादा" -> now "Hey, dada — what happened?".
+
+PROJECT LAYOUT
+--------------
+01_source/      original download (read-only), YouTube metadata + thumbnail
+02_analysis/    transcript (Whisper medium, Hindi), loudness map, scene cuts, silences,
+                black frames, contact sheets, QC report
+03_scripts/     make_audio_assets.py, transcribe.py, audio_energy.py, build_edl.py (the edit),
+                edl.json (generated edit decision list), render.py, make_thumbnail.sh, qc.py
+04_assets/      music/ and sfx/ (all original), fonts/ (Inter, SIL Open Font Licence)
+05_work/        intermediate renders (safe to delete)
+06_final/       Final_Edited_Video.mp4, Thumbnail.jpg
+
+Re-render: python3 03_scripts/build_edl.py . && python3 03_scripts/render.py .
+
+RIGHTS NOTE
+-----------
+The footage belongs to its creators (SRA VLOGGER / Team Boys). The music and SFX are original
+and free to use. Publishing this edit publicly needs the creators' permission.

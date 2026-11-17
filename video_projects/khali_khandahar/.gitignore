@@ -1,0 +1,5 @@
+# large media: kept locally / delivered separately (GitHub rejects files >100 MB)
+*.mp4
+*.part
+05_work/*
+!05_work/README.txt
