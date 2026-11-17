@@ -114,3 +114,12 @@ RIGHTS NOTE
 -----------
 The footage belongs to its creators (SRA VLOGGER / Team Boys). The music and SFX are original
 and free to use. Publishing this edit publicly needs the creators' permission.
+
+DELIVERY
+--------
+- Master: 06_final/Final_Edited_Video.mp4 (587.5 MB, ~7 Mbps) — best quality.
+- Cloudinary copy (Free plan caps videos at 100 MB): 06_final/Khali_Khandahar_Final_Edit_1080p_cloudinary.mp4,
+  1920x1080, 97.2 MB, two-pass x264 ~1.05 Mbps (grain removed before encoding so the bitrate
+  goes to picture detail). Uploaded to Cloudinary folder "ChatGPT image":
+    video:     https://res.cloudinary.com/tdidszty/video/upload/v1794927736/Khali_Khandahar_Final_Edit_1080p.mp4
+    thumbnail: https://res.cloudinary.com/tdidszty/image/upload/v1794927749/Khali_Khandahar_Thumbnail.jpg
