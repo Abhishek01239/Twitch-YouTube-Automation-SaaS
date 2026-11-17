@@ -93,6 +93,54 @@ def audio_filters(c, dur_out):
     return ",".join(f)
 
 
+def voice_filters(c, dur_out):
+    """Dialogue chain for the separately-built voice track (input already de-noised by
+    enhance_voice.py): clean low end, cut mud, add presence/air, tame sibilance, level."""
+    sp = c.get("speed", 1.0)
+    f = ["highpass=f=90:poles=2",
+         "equalizer=f=250:t=q:w=1.0:g=-3",     # boxy / muddy phone-mic low mids
+         "equalizer=f=3200:t=q:w=1.4:g=4",     # intelligibility / presence
+         "equalizer=f=7000:t=q:w=1.0:g=1.5",   # a little air back after de-noising
+         "deesser=i=0.4:m=0.5:f=0.5",
+         "acompressor=threshold=-28dB:ratio=3.5:attack=6:release=150:makeup=6:knee=4"]
+    if sp != 1.0:
+        f.append(f"atempo={sp}" if 0.5 <= sp <= 2 else f"atempo={sp**0.5},atempo={sp**0.5}")
+    g = c.get("orig_gain_db", 0)
+    if c.get("mute"):
+        f.append("volume=0")
+    elif g:
+        f.append(f"volume={g}dB")
+    fi = max(c.get("fade_in", 0), 0.02); fo = max(c.get("fade_out", 0), 0.03)
+    f.append(f"afade=t=in:st=0:d={fi}")
+    f.append(f"afade=t=out:st={dur_out - fo:.3f}:d={fo}")
+    # pad/trim to the clip's exact rendered video duration so the track stays frame-accurate
+    f.append(f"aresample=48000,aformat=channel_layouts=stereo,apad,atrim=0:{c['_dur']:.6f}")
+    return ",".join(f)
+
+
+def build_dialogue(clips):
+    """Per-clip voice audio from the enhanced soundtrack, concatenated into one WAV."""
+    src = os.path.join(P, EDL["dialogue_audio"])
+    vdir = os.path.join(WORK, "voice"); os.makedirs(vdir, exist_ok=True)
+    parts = []
+    for i, c in enumerate(clips):
+        o = os.path.join(vdir, f"v_{i:03d}.wav")
+        if c.get("card"):
+            run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+                 "-t", f"{c['_dur']:.6f}", "-c:a", "pcm_s16le", o])
+        else:
+            sp = c.get("speed", 1.0)
+            dur_in = c["out"] - c["in"]
+            run(["ffmpeg", "-y", "-v", "error", "-ss", f"{c['in']:.3f}", "-t", f"{dur_in:.3f}", "-i", src,
+                 "-af", voice_filters(c, dur_in / sp), "-c:a", "pcm_s16le", o])
+        parts.append(o)
+    lst = os.path.join(vdir, "list.txt")
+    open(lst, "w").write("".join(f"file '{p}'\n" for p in parts))
+    out = os.path.join(WORK, "dialogue.wav")
+    run(["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", lst, "-c", "copy", out])
+    return out
+
+
 def render_clip(i, c):
     import hashlib
     key = hashlib.md5(json.dumps({k: v for k, v in c.items() if k not in ("text", "captions", "label") and not k.startswith("_")},
@@ -232,8 +280,14 @@ def main():
         idx = n_in; n_in += 1
         fparts.append(f"[{idx}:a]volume={s.get('gain_db',-8)}dB,aresample=48000,adelay={int(max(at,0)*1000)}|{int(max(at,0)*1000)}[s{k}]")
         sfx_labels.append(f"[s{k}]")
-    # dialogue (original audio) is the sidechain key that ducks music under speech
-    fparts.append("[0:a]asplit=2[dlg][key]")
+    # dialogue is the sidechain key that ducks music under speech; use the enhanced voice
+    # track when the EDL provides one, else the per-clip audio baked into joined.mp4
+    dsrc = "[0:a]"
+    if EDL.get("dialogue_audio"):
+        inputs += ["-i", build_dialogue(clips)]
+        dsrc = f"[{n_in}:a]"; n_in += 1
+        print("dialogue: enhanced voice track built", flush=True)
+    fparts.append(f"{dsrc}asplit=2[dlg][key]")
     fparts.append("".join(mus_labels) + f"amix=inputs={len(mus_labels)}:normalize=0:duration=longest[mus]")
     fparts.append("[mus][key]sidechaincompress=threshold=0.03:ratio=6:attack=20:release=400:makeup=1[musd]")
     fparts.append("[dlg][musd]" + "".join(sfx_labels) +
