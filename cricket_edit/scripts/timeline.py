@@ -26,7 +26,7 @@ SEGMENTS = [
     dict(name="hook_windup", src=(72.43, 72.93), speed=1.0, zoom=[(0, 1.04, .35, .6), (.5, 1.08, .35, .62)]),
     dict(name="hook_six_slo", src=(72.93, 73.43), speed=0.5, bars=True,
          zoom=[(0, 1.08, .35, .62), (1.0, 1.2, .3, .62)]),
-    dict(name="hook_grin", src=(46.3, 46.8), speed=1.0, zoom=[(0, 1.12, .45, .6), (.5, 1.16, .45, .6)]),
+    dict(name="hook_grin", src=(46.3, 46.8), speed=1.0, zoom=[(0, 1.10, .45, .465), (.5, 1.13, .45, .455)]),
     dict(name="hook_debate", src=(80.3, 80.8), speed=1.0, zoom=[(0, 1.0, .5, .5), (.5, 1.05, .5, .45)]),
     dict(name="hook_arms", src=(87.3, 88.3), speed=2 / 3, zoom=[(0, 1.0, .45, .5), (1.5, 1.1, .45, .5)]),
     # ---------- TITLE ----------
@@ -49,9 +49,9 @@ SEGMENTS = [
     # ---------- ROUND 2 : second batter ----------
     dict(name="stance", src=(37.0, 39.0), speed=1.0, zoom=[(0, B, .45, .55), (2, 1.1, .45, .6)]),
     dict(name="pitch_walker", src=(40.0, 43.5), speed=1.75, audio=0.6, zoom=[(0, B, .4, .6), (2, 1.08, .35, .65)]),
-    dict(name="nb_delivery", src=(43.9, 44.9), speed=1.0, zoom=[(0, B, .5, .55), (1, 1.07, .5, .55)]),
+    dict(name="nb_delivery", src=(43.9, 44.9), speed=1.0, zoom=[(0, B, .5, .5), (1, 1.07, .5, .48)]),
     dict(name="nb_reaction", src=(44.9, 48.4), speed=1.0,
-         zoom=[(0, 1.07, .5, .55), (1.0, 1.05, .45, .6), (1.6, 1.16, .45, .62), (2.6, 1.16, .55, .65), (3.5, 1.06, .6, .6)]),
+         zoom=[(0, 1.07, .5, .48), (1.0, 1.05, .45, .49), (1.6, 1.15, .45, .445), (2.6, 1.15, .55, .445), (3.5, 1.06, .6, .48)]),
     dict(name="dot_setup", src=(56.1, 57.6), speed=1.0, zoom=[(0, B, .5, .55), (1.5, 1.08, .5, .6)]),
     dict(name="dot_swing_slo", src=(57.6, 58.1), speed=0.5, bars=True,
          zoom=[(0, 1.08, .5, .6), (1.0, 1.2, .48, .55)]),
