@@ -1,7 +1,7 @@
-file: /home/user/Twitch-YouTube-Automation-SaaS/video_projects/khali_khandahar/06_final/Final_Edited_Video.mp4  size 587.3 MB
-video: h264 1920x1080 30/1 fps, yuv420p, dur 655.367s
-audio: aac 48000 Hz 2ch, dur 655.342s
-A/V duration difference: 25 ms -> OK
+file: /home/user/Twitch-YouTube-Automation-SaaS/video_projects/khali_khandahar/06_final/Final_Edited_Video.mp4  size 587.4 MB
+video: h264 1920x1080 30/1 fps, yuv420p, dur 655.333s
+audio: aac 48000 Hz 2ch, dur 655.354s
+A/V duration difference: 21 ms -> OK
 full decode errors: 0
 black segments >=0.4s: 12
    black    10.83 ->    11.67
@@ -15,9 +15,9 @@ black segments >=0.4s: 12
    black   606.80 ->   607.63
    black   608.00 ->   608.47
    black   638.73 ->   642.23
-   black   650.23 ->   655.33
+   black   650.23 ->   655.30
 frozen segments >=3s: 1 ['651']
-loudness: integrated -15.4 LUFS, true peak -1.3 dBFS, LRA 11.3 LU
+loudness: integrated -15.2 LUFS, true peak -1.1 dBFS, LRA 10.9 LU
 spell check (aspell): unknown words = ['Ansh', 'Khali', 'Khandahar', 'Sumant', 'dada']
 on-screen text (27 events):
    They call it Khali Khandahar because no living soul remains.

@@ -68,7 +68,11 @@ Techniques
 
 AUDIO
 -----
- - Dialogue: 80 Hz high-pass, FFT noise reduction, 3 kHz presence lift, gentle compression.
+ - Dialogue (v2): the raw dialogue of the 33 speaking clips (9:41) was cleaned with the
+   ElevenLabs Voice Isolator (9,677 credits); 25% of a noisereduce-de-noised track is blended
+   back so the horror ambience isn't stripped. Then: 90 Hz high-pass, -3 dB at 250 Hz (mud),
+   +4 dB at 3.2 kHz (presence), de-esser, compression. Clips not sent to the isolator (music-led
+   speed ramps, credits) use the noisereduce track. Lip sync verified: 22-25 ms (< 1 frame).
  - Music: three ORIGINAL beds synthesized from scratch in Python (no third-party music, so no
    copyright risk): dark ambient drone, 84 BPM dusk pulse, 112 BPM heartbeat climax bed.
    Music is side-chain ducked under dialogue automatically.
@@ -118,8 +122,9 @@ and free to use. Publishing this edit publicly needs the creators' permission.
 DELIVERY
 --------
 - Master: 06_final/Final_Edited_Video.mp4 (587.5 MB, ~7 Mbps) — best quality.
+- HQ copy: 06_final/Khali_Khandahar_Final_Edit_1080p_HQ.mp4 (361 MiB, ~4.5 Mbps), sent in chat.
 - Cloudinary copy (Free plan caps videos at 100 MB): 06_final/Khali_Khandahar_Final_Edit_1080p_cloudinary.mp4,
   1920x1080, 97.2 MB, two-pass x264 ~1.05 Mbps (grain removed before encoding so the bitrate
   goes to picture detail). Uploaded to Cloudinary folder "ChatGPT image":
-    video:     https://res.cloudinary.com/tdidszty/video/upload/v1794927736/Khali_Khandahar_Final_Edit_1080p.mp4
+    video:     https://res.cloudinary.com/tdidszty/video/upload/v1794933550/Khali_Khandahar_Final_Edit_1080p.mp4
     thumbnail: https://res.cloudinary.com/tdidszty/image/upload/v1794927749/Khali_Khandahar_Thumbnail.jpg
