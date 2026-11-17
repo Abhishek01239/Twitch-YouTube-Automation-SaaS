@@ -1,6 +1,6 @@
 {
  "source": "01_source/original_cloudinary_360p.mp4",
- "dialogue_audio": "05_work/voice/dialogue_enhanced.wav",
+ "dialogue_audio": "05_work/voice/dialogue_isolated.wav",
  "fonts": {
   "title": "Inter Display Black",
   "ui": "Inter Display SemiBold",

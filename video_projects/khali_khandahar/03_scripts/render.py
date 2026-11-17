@@ -300,6 +300,23 @@ def main():
         vf = "noise=alls=3:allf=t+u," + vf  # light grain; bitrate is capped below
     out = os.path.join(P, "06_final", "Preview.mp4" if PREVIEW else "Final_Edited_Video.mp4")
     os.makedirs(os.path.dirname(out), exist_ok=True)
+    if "--remux-audio" in sys.argv:
+        # audio-only update: render just the new mix, then swap it into every finished MP4
+        # in 06_final with the picture stream copied untouched (no video re-encode)
+        mix = os.path.join(WORK, "final_mix.m4a")
+        run(["ffmpeg", "-y", "-v", "error"] + inputs + ["-filter_complex", ";".join(fparts),
+             "-map", "[aout]", "-t", f"{total:.3f}", "-c:a", "aac", "-b:a", "256k", "-ar", "48000", mix])
+        for f in sorted(os.listdir(os.path.dirname(out))):
+            if not f.endswith(".mp4"):
+                continue
+            path = os.path.join(os.path.dirname(out), f)
+            br = "128k" if "cloudinary" in f else "256k"
+            tmp = path + ".remux.mp4"
+            run(["ffmpeg", "-y", "-v", "error", "-i", path, "-i", mix, "-map", "0:v", "-map", "1:a",
+                 "-c:v", "copy", "-c:a", "aac", "-b:a", br, "-movflags", "+faststart", "-shortest", tmp])
+            os.replace(tmp, path)
+            print("remuxed audio into", f, flush=True)
+        return
     cmd = ["ffmpeg", "-y", "-v", "error"] + inputs + [
         "-filter_complex", ";".join(fparts) + f";[0:v]{vf}[vout]",
         "-map", "[vout]", "-map", "[aout]", "-t", f"{total:.3f}",

@@ -166,8 +166,8 @@ music += [
 ]
 
 edl = {"source": "01_source/original_cloudinary_360p.mp4",
-       # de-noised soundtrack made by enhance_voice.py (regenerate if missing)
-       "dialogue_audio": "05_work/voice/dialogue_enhanced.wav",
+       # ElevenLabs Voice Isolator result unpacked by isolate_prep.py (enhance_voice.py track as fallback)
+       "dialogue_audio": "05_work/voice/dialogue_isolated.wav",
        "fonts": {"title": "Inter Display Black", "ui": "Inter Display SemiBold", "caption": "Inter ExtraBold"},
        "grain": True, "clips": clips, "music": music, "sfx": sfx}
 json.dump(edl, open(os.path.join(P, "03_scripts", "edl.json"), "w"), indent=1, ensure_ascii=False)
