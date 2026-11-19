@@ -6,28 +6,14 @@ import os from "node:os";
 import path from "node:path";
 
 const DAY=24*60*60*1000;
-const HOUR=60*60*1000;
-const TIME_ZONE="America/New_York";
-// Daily upload slots in New York time: 4 Shorts + 1 long-form video.
-const SLOTS:Array<{hour:number;kind:"short"|"video"}>=[
-  {hour:6,kind:"short"},
-  {hour:9,kind:"short"},
-  {hour:12,kind:"short"},
-  {hour:15,kind:"short"},
-  {hour:18,kind:"video"}
-];
-// A slot whose time already passed by more than this is skipped instead of uploaded late.
-const LATE_TOLERANCE=45*60*1000;
-// Build the daily compilation video this long before its slot.
-const VIDEO_BUILD_LEAD=2*HOUR;
-const VIDEO_MAX_CLIPS=10;
-const VIDEO_MIN_CLIPS=2;
+const GAP=2*60*60*1000;
+const MAX_PER_DAY=3;
 
 type Channel={id:string;name:string;youtube_channel_id:string;status:string};
 type Job={id:string;source_short_id:string;channel_id:string;scheduled_at:string;status:string;attempts:number};
 type YTToken={channel_id:string;access_token:string;refresh_token:string;token_expires_at:string|null};
 type TwitchToken={connection_id:string;access_token:string;refresh_token:string;token_expires_at:string|null};
-type Source={id:string;kind:"short"|"video";source_url:string|null;storage_path:string|null;edited_storage_path:string|null;title:string|null;description:string|null;tags:string[];hashtags:string[];created_at:string;compilation_date:string|null};
+type Source={id:string;source_url:string|null;storage_path:string|null;edited_storage_path:string|null;title:string|null;description:string|null;tags:string[];hashtags:string[];created_at:string};
 
 const admin=createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!,process.env.SUPABASE_SERVICE_ROLE_KEY!,{auth:{autoRefreshToken:false,persistSession:false}});
 const required=(name:string)=>{const v=process.env[name];if(!v)throw new Error(`${name} is required`);return v;};
@@ -209,101 +195,16 @@ async function uploadToYouTube(token:string,source:Source,video:Buffer,contentTy
   const result=await put.json() as {id?:string};if(!result.id)throw new Error("YouTube upload completed without a video id");return result.id;
 }
 
-function nyDateParts(date:Date){
-  const parts=new Intl.DateTimeFormat("en-US",{timeZone:TIME_ZONE,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}).formatToParts(date);
-  const get=(t:string)=>Number(parts.find(p=>p.type===t)?.value);
-  return {year:get("year"),month:get("month"),day:get("day"),hour:get("hour"),minute:get("minute"),second:get("second")};
-}
-function tzOffsetMs(date:Date){
-  const p=nyDateParts(date);
-  return Date.UTC(p.year,p.month-1,p.day,p.hour,p.minute,p.second)-Math.floor(date.getTime()/1000)*1000;
-}
-// UTC instant for a wall-clock time in New York (DST-aware).
-function nyTimeToUtc(year:number,month:number,day:number,hour:number){
-  const guess=Date.UTC(year,month-1,day,hour,0,0);
-  let utc=guess-tzOffsetMs(new Date(guess));
-  utc=guess-tzOffsetMs(new Date(utc));
-  return new Date(utc);
-}
-function todaysSlots(now:Date){
-  const {year,month,day}=nyDateParts(now);
-  const dateKey=`${year}-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
-  return {dateKey,slots:SLOTS.map(s=>({...s,at:nyTimeToUtc(year,month,day,s.hour)}))};
-}
-
-function runFfmpeg(args:string[]){
-  return new Promise<void>((resolve,reject)=>execFile("ffmpeg",args,{maxBuffer:10*1024*1024},e=>e?reject(e):resolve()));
-}
-function hasAudio(file:string){
-  return new Promise<boolean>(resolve=>execFile("ffprobe",["-v","error","-select_streams","a","-show_entries","stream=index","-of","csv=p=0",file],(e,out)=>resolve(!e&&String(out).trim().length>0)));
-}
-
-// Builds a 16:9 long-form compilation of recent clips for today's video slot.
-async function ensureDailyVideo(dateKey:string){
-  const {data:existing}=await admin.from("source_shorts").select("*").eq("kind","video").eq("compilation_date",dateKey).maybeSingle();
-  if(existing)return existing as Source;
-  const {data:clips,error}=await admin.from("source_shorts").select("*").eq("kind","short").gte("created_at",new Date(Date.now()-DAY).toISOString()).order("created_at",{ascending:false}).limit(VIDEO_MAX_CLIPS);
-  if(error)throw error;
-  const list=(clips||[]) as Source[];
-  if(list.length<VIDEO_MIN_CLIPS){console.log(`Not enough clips for ${dateKey} video (${list.length}).`);return null;}
-
-  const dir=await fs.mkdtemp(path.join(os.tmpdir(),"daily-video-"));
-  try{
-    const parts:string[]=[];
-    for(const [i,clip] of list.entries()){
-      try{
-        const {buffer}=await downloadVideo({...clip,edited_storage_path:null});
-        const input=path.join(dir,`in-${i}.mp4`),out=path.join(dir,`part-${i}.mp4`);
-        await fs.writeFile(input,buffer);
-        const vf="scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p";
-        const audioArgs=await hasAudio(input)
-          ?["-i",input,"-vf",vf,"-map","0:v:0","-map","0:a:0"]
-          :["-i",input,"-f","lavfi","-i","anullsrc=r=48000:cl=stereo","-vf",vf,"-map","0:v:0","-map","1:a:0","-shortest"];
-        await runFfmpeg(["-y",...audioArgs,"-c:v","libx264","-preset","veryfast","-crf","22","-c:a","aac","-b:a","160k","-ar","48000","-ac","2",out]);
-        parts.push(out);
-      }catch(e){console.error(`Skipping clip ${clip.id} in compilation:`,e instanceof Error?e.message:String(e));}
-    }
-    if(parts.length<VIDEO_MIN_CLIPS){console.log(`Not enough usable clips for ${dateKey} video.`);return null;}
-    const listFile=path.join(dir,"list.txt"),output=path.join(dir,"video.mp4");
-    await fs.writeFile(listFile,parts.map(p=>`file '${p}'`).join("\n"),"utf8");
-    await runFfmpeg(["-y","-f","concat","-safe","0","-i",listFile,"-c","copy","-movflags","+faststart",output]);
-    const storagePath=`videos/${dateKey}-compilation.mp4`;
-    const {error:uploadError}=await admin.storage.from(SOURCE_BUCKET).upload(storagePath,await fs.readFile(output),{contentType:"video/mp4",upsert:true});
-    if(uploadError)throw new Error("Compilation storage upload failed: "+uploadError.message);
-    const pretty=new Date(`${dateKey}T12:00:00Z`).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric",timeZone:"UTC"});
-    const used=list.slice(0,parts.length);
-    const description=`Best Twitch moments of ${pretty}.\n\n`+used.map((c,i)=>`${i+1}. ${c.title||"Clip"}`).join("\n");
-    const {data:inserted,error:insertError}=await admin.from("source_shorts").insert({
-      kind:"video",compilation_date:dateKey,storage_path:storagePath,source_url:null,
-      title:`Best Twitch Moments – ${pretty}`.slice(0,100),
-      description,
-      tags:["Twitch","Gaming","Twitch highlights","Compilation","Best moments"],
-      hashtags:["#Twitch","#Gaming","#Highlights"]
-    }).select("*").single();
-    if(insertError)throw insertError;
-    console.log(`Daily video compiled for ${dateKey} from ${parts.length} clips.`);
-    return inserted as Source;
-  }finally{await fs.rm(dir,{recursive:true,force:true});}
-}
-
-// Fills today's New York slots (6am, 9am, 12pm, 3pm Shorts; 6pm video) for each channel.
-async function scheduleTodaysSlots(channels:Channel[],shorts:Source[],video:Source|null,slots:Array<{hour:number;kind:"short"|"video";at:Date}>){
-  const now=Date.now();
-  const dayStart=slots[0].at.getTime()-HOUR,dayEnd=slots[slots.length-1].at.getTime()+HOUR;
+async function scheduleTodaysShorts(channels:Channel[],sources:Source[]){
+  const start=new Date();start.setUTCHours(0,0,0,0);const end=new Date(start.getTime()+DAY);
   for(const channel of channels){
-    const {data:existing}=await admin.from("upload_jobs").select("source_short_id,scheduled_at").eq("channel_id",channel.id).gte("scheduled_at",new Date(dayStart).toISOString()).lte("scheduled_at",new Date(dayEnd).toISOString());
-    const takenTimes=new Set((existing||[]).map((j:{scheduled_at:string})=>new Date(j.scheduled_at).getTime()));
-    const {data:used}=await admin.from("upload_jobs").select("source_short_id").eq("channel_id",channel.id).in("source_short_id",[...shorts.map(s=>s.id),...(video?[video.id]:[])]);
-    const usedIds=new Set((used||[]).map((j:{source_short_id:string})=>j.source_short_id));
-    const available=shorts.filter(s=>!usedIds.has(s.id));
-    for(const slot of slots){
-      const at=slot.at.getTime();
-      if(takenTimes.has(at)||at<now-LATE_TOLERANCE)continue;
-      const source=slot.kind==="video"?(video&&!usedIds.has(video.id)?video:null):available.shift();
-      if(!source)continue;
-      const {error}=await admin.from("upload_jobs").upsert({source_short_id:source.id,channel_id:channel.id,scheduled_at:slot.at.toISOString(),status:"pending"},{onConflict:"source_short_id,channel_id",ignoreDuplicates:true});
-      if(error)console.error("schedule failed",channel.id,source.id,error.message);
-      else console.log(`Scheduled ${slot.kind} for ${channel.name} at ${slot.hour}:00 ${TIME_ZONE}`);
+    const {data:existing}=await admin.from("upload_jobs").select("source_short_id,scheduled_at,status").eq("channel_id",channel.id).gte("scheduled_at",start.toISOString()).lt("scheduled_at",end.toISOString()).order("scheduled_at",{ascending:true});
+    const existingIds=new Set((existing||[]).map((j:{source_short_id:string})=>j.source_short_id));
+    const missing=sources.filter(s=>!existingIds.has(s.id)).slice(0,MAX_PER_DAY);if(!missing.length)continue;
+    let next=Math.max(Date.now(),(existing||[]).reduce((max:number,j:{scheduled_at:string})=>Math.max(max,new Date(j.scheduled_at).getTime()),0)+GAP);
+    for(const source of missing){
+      const {error}=await admin.from("upload_jobs").upsert({source_short_id:source.id,channel_id:channel.id,scheduled_at:new Date(next).toISOString(),status:"pending"},{onConflict:"source_short_id,channel_id"});
+      if(error)console.error("schedule failed",channel.id,source.id,error.message);next+=GAP;
     }
   }
 }
@@ -324,12 +225,10 @@ async function processDueJobs(){
       if(channel.status!=="active")throw new Error("Channel is not active");
       const usable=await getUsableGoogleToken(token as YTToken);
       const {buffer,contentType}=await downloadVideo(source as Source);
-      let uploadBuffer=buffer;
-      if((source as Source).kind!=="video"){
-        const editedPath=await ensureEditedAsset(source as Source,buffer);
-        ({buffer:uploadBuffer}=await downloadVideo({...(source as Source),storage_path:editedPath,source_url:null}));
-      }
-      const videoId=await uploadToYouTube(usable.access_token,source as Source,uploadBuffer,"video/mp4");
+      await ensureEditedAsset(source as Source,buffer);
+      const editedSource={...(source as Source),storage_path:(source as Source).edited_storage_path||undefined,source_url:null};
+      const {buffer:editedBuffer}=await downloadVideo({...editedSource,edited_storage_path:(await admin.from("source_shorts").select("edited_storage_path").eq("id",source.id).single()).data?.edited_storage_path||null} as Source);
+      const videoId=await uploadToYouTube(usable.access_token,source as Source,editedBuffer,"video/mp4");
       await admin.from("upload_jobs").update({status:"uploaded",youtube_video_id:videoId,last_error:null}).eq("id",job.id);
       console.log(`Uploaded ${videoId} to ${channel.name}`);
     }catch(error){
@@ -348,21 +247,15 @@ async function main(){
   if(channelError)throw channelError;
   const channelList=(channels||[]) as Channel[];if(!channelList.length){console.log("No active channels.");return;}
 
-  const now=new Date();
-  const {dateKey,slots}=todaysSlots(now);
-  const {data:subs,error:subError}=await admin.from("subscriptions").select("channel_id,status,current_period_end").in("channel_id",channelList.map(c=>c.id)).eq("status","active");
-  if(subError)throw subError;
-  const ids=new Set((subs||[]).filter((s:{current_period_end:string|null})=>!s.current_period_end||new Date(s.current_period_end)>now).map((s:{channel_id:string})=>s.channel_id));
-  const subscribed=channelList.filter(c=>ids.has(c.id));
-  if(subscribed.length){
-    const {data:shorts,error:sourceError}=await admin.from("source_shorts").select("*").eq("kind","short").gte("created_at",new Date(now.getTime()-2*DAY).toISOString()).order("created_at",{ascending:false}).limit(50);
-    if(sourceError)throw sourceError;
-    const videoSlot=slots.find(s=>s.kind==="video")!;
-    let video:Source|null=null;
-    if(now.getTime()>=videoSlot.at.getTime()-VIDEO_BUILD_LEAD&&now.getTime()<videoSlot.at.getTime()+LATE_TOLERANCE){
-      try{video=await ensureDailyVideo(dateKey);}catch(e){console.error("Daily video build failed:",e instanceof Error?e.message:String(e));}
-    }
-    await scheduleTodaysSlots(subscribed,((shorts||[]) as Source[]).slice(0,50),video,slots);
+  const now=new Date();const start=new Date(now);start.setUTCHours(0,0,0,0);
+  const {data:sources,error:sourceError}=await admin.from("source_shorts").select("*").gte("created_at",start.toISOString()).lt("created_at",new Date(start.getTime()+DAY).toISOString()).order("created_at",{ascending:false}).limit(MAX_PER_DAY);
+  if(sourceError)throw sourceError;
+  const todaysSources=(sources||[]) as Source[];
+  if(todaysSources.length){
+    const {data:subs,error:subError}=await admin.from("subscriptions").select("channel_id,status,current_period_end").in("channel_id",channelList.map(c=>c.id)).eq("status","active");
+    if(subError)throw subError;
+    const ids=new Set((subs||[]).filter((s:{current_period_end:string|null})=>!s.current_period_end||new Date(s.current_period_end)>now).map((s:{channel_id:string})=>s.channel_id));
+    await scheduleTodaysShorts(channelList.filter(c=>ids.has(c.id)),todaysSources);
   }
   await processDueJobs();
 }
