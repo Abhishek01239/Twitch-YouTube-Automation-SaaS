@@ -9,11 +9,11 @@ const DAY=24*60*60*1000;
 const GAP=2*60*60*1000;
 const MAX_PER_DAY=3;
 
-type Channel={id:string;name:string;youtube_channel_id:string;status:string};
+type Channel={id:string;user_id:string;name:string;youtube_channel_id:string;status:string};
 type Job={id:string;source_short_id:string;channel_id:string;scheduled_at:string;status:string;attempts:number};
 type YTToken={channel_id:string;access_token:string;refresh_token:string;token_expires_at:string|null};
 type TwitchToken={connection_id:string;access_token:string;refresh_token:string;token_expires_at:string|null};
-type Source={id:string;source_url:string|null;storage_path:string|null;edited_storage_path:string|null;title:string|null;description:string|null;tags:string[];hashtags:string[];created_at:string};
+type Source={id:string;source_url:string|null;storage_path:string|null;edited_storage_path:string|null;owner_user_id:string|null;source_kind:string;credit_text:string|null;title:string|null;description:string|null;tags:string[];hashtags:string[];created_at:string};
 
 const admin=createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!,process.env.SUPABASE_SERVICE_ROLE_KEY!,{auth:{autoRefreshToken:false,persistSession:false}});
 const required=(name:string)=>{const v=process.env[name];if(!v)throw new Error(`${name} is required`);return v;};
@@ -51,51 +51,60 @@ async function storeClip(connectionUserId:string,clipId:string,sourceUrl:string)
   return storagePath;
 }
 
+type TwitchClip={id:string;title:string;broadcaster_name:string;game_id:string;view_count:number;created_at:string;downloadUrl:string};
+
+// Returns recent top clips with download URLs. Twitch only returns download URLs when the
+// token owner (editorId) is the broadcaster or one of the broadcaster's channel editors.
+async function fetchClipsWithDownloads(accessToken:string,broadcasterId:string,editorId:string,gameId?:string|null):Promise<TwitchClip[]>{
+  const clientId=required("TWITCH_CLIENT_ID");
+  const headers={"Client-Id":clientId,Authorization:`Bearer ${accessToken}`};
+  const clipsUrl=new URL("https://api.twitch.tv/helix/clips");
+  clipsUrl.searchParams.set("broadcaster_id",broadcasterId);
+  clipsUrl.searchParams.set("started_at",new Date(Date.now()-DAY).toISOString());
+  clipsUrl.searchParams.set("first","50");
+  const clipsResponse=await fetch(clipsUrl,{headers});
+  if(!clipsResponse.ok)throw new Error(`Twitch clips lookup failed: ${clipsResponse.status} ${await clipsResponse.text()}`);
+  const clips=await clipsResponse.json() as {data:Array<Omit<TwitchClip,"downloadUrl">>};
+  const candidates=clips.data.filter(c=>!gameId||c.game_id===gameId).sort((a,b)=>b.view_count-a.view_count).slice(0,10);
+  if(!candidates.length)return [];
+
+  const downloadUrl=new URL("https://api.twitch.tv/helix/clips/downloads");
+  downloadUrl.searchParams.set("broadcaster_id",broadcasterId);
+  downloadUrl.searchParams.set("editor_id",editorId);
+  for(const c of candidates)downloadUrl.searchParams.append("clip_id",c.id);
+  const downloadsResponse=await fetch(downloadUrl,{headers});
+  if(downloadsResponse.status===401||downloadsResponse.status===403)throw new Error(`Not authorized to download clips for broadcaster ${broadcasterId}. The streamer must add your Twitch account as a channel editor, and you must reconnect Twitch to grant the editor:manage:clips scope.`);
+  if(!downloadsResponse.ok)throw new Error(`Twitch clip download lookup failed: ${downloadsResponse.status} ${await downloadsResponse.text()}`);
+  const downloads=await downloadsResponse.json() as {data:Array<{clip_id:string;landscape_download_url:string|null;portrait_download_url:string|null}>};
+  const byId=new Map(downloads.data.map(d=>[d.clip_id,d]));
+  return candidates.flatMap(c=>{const m=byId.get(c.id);const url=m?.portrait_download_url||m?.landscape_download_url;return url?[{...c,downloadUrl:url}]:[];});
+}
+
+type TwitchConnection={id:string;user_id:string;twitch_user_id:string;twitch_display_name:string};
+async function connectionToken(connection:TwitchConnection){
+  const {data:rawToken}=await admin.from("twitch_tokens").select("*").eq("connection_id",connection.id).single();
+  return rawToken?getUsableTwitchToken(rawToken as TwitchToken):null;
+}
+
 async function ingestTwitchClips(){
   const {data:connections}=await admin.from("twitch_connections").select("id,user_id,twitch_user_id,twitch_display_name");
   if(!connections?.length)return;
-  const clientId=required("TWITCH_CLIENT_ID");
-  const start=new Date(Date.now()-DAY).toISOString();
 
-  for(const connection of connections as Array<{id:string;user_id:string;twitch_user_id:string;twitch_display_name:string}>){
+  for(const connection of connections as TwitchConnection[]){
     try{
-      const {data:rawToken}=await admin.from("twitch_tokens").select("*").eq("connection_id",connection.id).single();
-      if(!rawToken)continue;
-      const token=await getUsableTwitchToken(rawToken as TwitchToken);
-      const clipsUrl=new URL("https://api.twitch.tv/helix/clips");
-      clipsUrl.searchParams.set("broadcaster_id",connection.twitch_user_id);
-      clipsUrl.searchParams.set("started_at",start);
-      clipsUrl.searchParams.set("first","20");
-      const clipsResponse=await fetch(clipsUrl,{headers:{"Client-Id":clientId,Authorization:`Bearer ${token.access_token}`}});
-      if(!clipsResponse.ok)throw new Error(`Twitch clips lookup failed: ${clipsResponse.status} ${await clipsResponse.text()}`);
-      const clips=await clipsResponse.json() as {data:Array<{id:string;title:string;broadcaster_name:string;game_id:string;language:string;view_count:number;created_at:string;duration:number;video_id:string}>};
-
-      const candidates=clips.data.sort((a,b)=>b.view_count-a.view_count).slice(0,10);
-      if(!candidates.length)continue;
-
-      const ids=candidates.map(c=>c.id);
-      const downloadUrl=new URL("https://api.twitch.tv/helix/clips/downloads");
-      downloadUrl.searchParams.set("broadcaster_id",connection.twitch_user_id);
-      downloadUrl.searchParams.set("editor_id",connection.twitch_user_id);
-      for(const id of ids)downloadUrl.searchParams.append("clip_id",id);
-
-      const downloadsResponse=await fetch(downloadUrl,{headers:{"Client-Id":clientId,Authorization:`Bearer ${token.access_token}`}});
-      if(!downloadsResponse.ok)throw new Error(`Twitch clip download lookup failed: ${downloadsResponse.status} ${await downloadsResponse.text()}`);
-      const downloads=await downloadsResponse.json() as {data:Array<{clip_id:string;landscape_download_url:string|null;portrait_download_url:string|null}>};
-      const byId=new Map(downloads.data.map(d=>[d.clip_id,d]));
-
-      for(const clip of candidates){
-        const media=byId.get(clip.id);
-        const sourceUrl=media?.portrait_download_url||media?.landscape_download_url;
-        if(!sourceUrl)continue;
-        const exists=await admin.from("source_shorts").select("id").eq("source_url",sourceUrl).maybeSingle();
+      const token=await connectionToken(connection);
+      if(!token)continue;
+      const clips=await fetchClipsWithDownloads(token.access_token,connection.twitch_user_id,connection.twitch_user_id);
+      for(const clip of clips){
+        const exists=await admin.from("source_shorts").select("id").eq("source_url",clip.downloadUrl).maybeSingle();
         if(exists.data)continue;
 
-        const storagePath=await storeClip(connection.user_id,clip.id,sourceUrl);
+        const storagePath=await storeClip(connection.user_id,clip.id,clip.downloadUrl);
         const meta=generateMetadata({channelName:connection.twitch_display_name,game:"Gaming",transcript:clip.title,keywords:["Twitch","Gaming","Shorts"]});
         const {error}=await admin.from("source_shorts").insert({
-          source_url:sourceUrl,
+          source_url:clip.downloadUrl,
           storage_path:storagePath,
+          source_kind:"own_twitch",
           title:clip.title||meta.title,
           description:`Twitch clip by ${clip.broadcaster_name}. ${clip.title||""}`,
           tags:["Twitch","Gaming","YouTube Shorts",clip.broadcaster_name],
@@ -104,6 +113,124 @@ async function ingestTwitchClips(){
         if(error)console.error("source insert failed",clip.id,error.message);
       }
     }catch(error){console.error(`Twitch ingestion failed for ${connection.twitch_display_name}:`,error instanceof Error?error.message:String(error));}
+  }
+}
+
+type ApprovedStreamer={id:string;user_id:string;twitch_user_id:string;twitch_login:string;twitch_display_name:string;game_id:string|null;game_name:string|null};
+
+// Clips from other streamers who gave this user permission (and made them a channel editor).
+// These Shorts are only distributed to the approving user's own channels and carry a credit overlay.
+async function ingestApprovedStreamerClips(){
+  const {data:streamers,error}=await admin.from("approved_streamers").select("id,user_id,twitch_user_id,twitch_login,twitch_display_name,game_id,game_name").eq("active",true);
+  if(error)throw error;
+  if(!streamers?.length)return;
+  const {data:connections}=await admin.from("twitch_connections").select("id,user_id,twitch_user_id,twitch_display_name").in("user_id",[...new Set(streamers.map(s=>s.user_id))]);
+  const byUser=new Map((connections||[]).map((c:TwitchConnection)=>[c.user_id,c]));
+
+  for(const streamer of streamers as ApprovedStreamer[]){
+    try{
+      const connection=byUser.get(streamer.user_id);
+      if(!connection){console.error(`Skipping @${streamer.twitch_login}: user has no Twitch connection`);continue;}
+      const token=await connectionToken(connection);
+      if(!token)continue;
+      const clips=await fetchClipsWithDownloads(token.access_token,streamer.twitch_user_id,connection.twitch_user_id,streamer.game_id);
+      for(const clip of clips){
+        const dedupeKey=`twitch:${streamer.user_id}:${clip.id}`;
+        const exists=await admin.from("source_shorts").select("id").eq("dedupe_key",dedupeKey).maybeSingle();
+        if(exists.data)continue;
+
+        const storagePath=await storeClip(streamer.user_id,clip.id,clip.downloadUrl);
+        const game=streamer.game_name||"Gaming";
+        const meta=generateMetadata({channelName:streamer.twitch_display_name,game,transcript:clip.title,keywords:[game,streamer.twitch_display_name,"Shorts"]});
+        const {error:insertError}=await admin.from("source_shorts").insert({
+          storage_path:storagePath,
+          dedupe_key:dedupeKey,
+          owner_user_id:streamer.user_id,
+          source_kind:"approved_streamer",
+          credit_text:`twitch.tv/${streamer.twitch_login}`,
+          title:clip.title||meta.title,
+          description:`${game} clip from ${streamer.twitch_display_name}'s stream, shared with permission. Watch them live: https://twitch.tv/${streamer.twitch_login}`,
+          tags:[...new Set([game,streamer.twitch_display_name,"Twitch","Gaming","YouTube Shorts"])],
+          hashtags:meta.hashtags
+        });
+        if(insertError)console.error("approved streamer insert failed",clip.id,insertError.message);
+      }
+    }catch(error){console.error(`Approved streamer ingestion failed for @${streamer.twitch_login}:`,error instanceof Error?error.message:String(error));}
+  }
+}
+
+const GAMEPLAY_BUCKET="gameplay-uploads";
+const run=(cmd:string,args:string[])=>new Promise<{stdout:string;stderr:string}>((resolve,reject)=>execFile(cmd,args,{maxBuffer:64*1024*1024},(e,stdout,stderr)=>e?reject(new Error(`${cmd} failed: ${stderr.slice(-500)||e.message}`)):resolve({stdout,stderr})));
+
+// Per-second loudness (RMS dBFS) of a recording's audio track.
+async function loudnessPerSecond(input:string){
+  const {stdout}=await run("ffmpeg",["-hide_banner","-nostats","-i",input,"-vn","-af","aresample=8000,asetnsamples=n=8000,astats=metadata=1:reset=1,ametadata=mode=print:key=lavfi.astats.Overall.RMS_level:file=-","-f","null","-"]);
+  return [...stdout.matchAll(/RMS_level=(-?[\d.]+|-inf)/g)].map(m=>m[1]==="-inf"?-100:Math.max(-100,Number(m[1])));
+}
+
+// Picks the loudest non-overlapping windows: shouting, explosions, chases and crashes are usually the highlights.
+export function pickHighlights(levels:number[],windowSeconds:number,count:number){
+  if(levels.length<=windowSeconds)return levels.length?[0]:[];
+  const prefix=[0];for(const l of levels)prefix.push(prefix[prefix.length-1]+l+100);
+  const scores=levels.slice(0,levels.length-windowSeconds+1).map((_,start)=>({start,score:prefix[start+windowSeconds]-prefix[start]}));
+  scores.sort((a,b)=>b.score-a.score);
+  const picked:number[]=[];
+  for(const {start} of scores){
+    if(picked.length>=count)break;
+    if(picked.every(p=>Math.abs(p-start)>=windowSeconds))picked.push(start);
+  }
+  return picked.sort((a,b)=>a-b);
+}
+
+type GameplayUpload={id:string;user_id:string;storage_path:string;title:string|null;game_name:string;clip_count:number;clip_seconds:number};
+
+async function processGameplayUploads(){
+  const {data:uploads,error}=await admin.from("gameplay_uploads").select("id,user_id,storage_path,title,game_name,clip_count,clip_seconds").eq("status","pending").order("created_at",{ascending:true}).limit(3);
+  if(error)throw error;
+  for(const upload of (uploads||[]) as GameplayUpload[]){
+    const {data:claimed}=await admin.from("gameplay_uploads").update({status:"processing",last_error:null}).eq("id",upload.id).eq("status","pending").select("id").maybeSingle();
+    if(!claimed)continue;
+    const dir=await fs.mkdtemp(path.join(os.tmpdir(),"gameplay-"));
+    try{
+      const {data,error:downloadError}=await admin.storage.from(GAMEPLAY_BUCKET).download(upload.storage_path);
+      if(downloadError||!data)throw new Error(`Gameplay download failed: ${downloadError?.message||"missing file"}`);
+      const input=path.join(dir,"input"+(path.extname(upload.storage_path)||".mp4"));
+      await fs.writeFile(input,Buffer.from(await data.arrayBuffer()));
+
+      const levels=await loudnessPerSecond(input);
+      if(!levels.length)throw new Error("Recording has no audio track to detect highlights from");
+      const starts=pickHighlights(levels,upload.clip_seconds,upload.clip_count);
+      let created=0;
+      for(const [i,start] of starts.entries()){
+        const dedupeKey=`gameplay:${upload.id}:${i}`;
+        const exists=await admin.from("source_shorts").select("id").eq("dedupe_key",dedupeKey).maybeSingle();
+        if(exists.data){created++;continue;}
+        const clipPath=path.join(dir,`clip-${i}.mp4`);
+        await run("ffmpeg",["-y","-ss",String(start),"-i",input,"-t",String(upload.clip_seconds),"-c:v","libx264","-preset","veryfast","-crf","20","-c:a","aac","-b:a","160k","-movflags","+faststart",clipPath]);
+        const storagePath=`gameplay/${upload.user_id}/${upload.id}-${i}.mp4`;
+        const {error:storeError}=await admin.storage.from(SOURCE_BUCKET).upload(storagePath,await fs.readFile(clipPath),{contentType:"video/mp4",upsert:true});
+        if(storeError)throw new Error(`Highlight storage upload failed: ${storeError.message}`);
+        const meta=generateMetadata({channelName:upload.title||upload.game_name,game:upload.game_name,keywords:[upload.game_name,"gameplay","highlights"]});
+        const {error:insertError}=await admin.from("source_shorts").insert({
+          storage_path:storagePath,
+          dedupe_key:dedupeKey,
+          owner_user_id:upload.user_id,
+          source_kind:"own_gameplay",
+          title:upload.title?`${upload.title} #${i+1}`.slice(0,100):meta.title,
+          description:meta.description,
+          tags:meta.tags,
+          hashtags:meta.hashtags
+        });
+        if(insertError)throw new Error(`Highlight insert failed: ${insertError.message}`);
+        created++;
+      }
+      await admin.from("gameplay_uploads").update({status:"done",clips_created:created}).eq("id",upload.id);
+      console.log(`Cut ${created} highlights from gameplay upload ${upload.id}`);
+    }catch(error){
+      const message=error instanceof Error?error.message:String(error);
+      await admin.from("gameplay_uploads").update({status:"failed",last_error:message}).eq("id",upload.id);
+      console.error(`Gameplay upload ${upload.id} failed:`,message);
+    }finally{await fs.rm(dir,{recursive:true,force:true});}
   }
 }
 
@@ -141,9 +268,14 @@ async function makeVerticalShort(source:Source,video:Buffer,subtitlePath?:string
   const input=path.join(dir,"input.mp4"),output=path.join(dir,"output.mp4");
   try{
     await fs.writeFile(input,video);
-    const vf=subtitlePath
+    let vf=subtitlePath
       ?"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,subtitles="+subtitlePath.replace(/\\/g,"/").replace(/:/g,"\\:")+":force_style='FontName=DejaVu Sans,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=120'"
       :"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1";
+    if(source.credit_text){
+      const creditFile=path.join(dir,"credit.txt");
+      await fs.writeFile(creditFile,source.credit_text,"utf8");
+      vf+=",drawtext=textfile="+creditFile.replace(/\\/g,"/").replace(/:/g,"\\:")+":font='DejaVu Sans':fontsize=44:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=14:x=(w-text_w)/2:y=110";
+    }
     await new Promise<void>((resolve,reject)=>execFile("ffmpeg",["-y","-i",input,"-vf",vf,"-c:v","libx264","-preset","veryfast","-crf","23","-c:a","aac","-b:a","128k","-movflags","+faststart",output],{maxBuffer:1024*1024},e=>e?reject(e):resolve()));
     return await fs.readFile(output);
   }finally{await fs.rm(dir,{recursive:true,force:true});}
@@ -200,7 +332,8 @@ async function scheduleTodaysShorts(channels:Channel[],sources:Source[]){
   for(const channel of channels){
     const {data:existing}=await admin.from("upload_jobs").select("source_short_id,scheduled_at,status").eq("channel_id",channel.id).gte("scheduled_at",start.toISOString()).lt("scheduled_at",end.toISOString()).order("scheduled_at",{ascending:true});
     const existingIds=new Set((existing||[]).map((j:{source_short_id:string})=>j.source_short_id));
-    const missing=sources.filter(s=>!existingIds.has(s.id)).slice(0,MAX_PER_DAY);if(!missing.length)continue;
+    // Clips from approved streamers and own gameplay belong to one user: only that user's channels get them.
+    const missing=sources.filter(s=>!existingIds.has(s.id)&&(!s.owner_user_id||s.owner_user_id===channel.user_id)).slice(0,MAX_PER_DAY);if(!missing.length)continue;
     let next=Math.max(Date.now(),(existing||[]).reduce((max:number,j:{scheduled_at:string})=>Math.max(max,new Date(j.scheduled_at).getTime()),0)+GAP);
     for(const source of missing){
       const {error}=await admin.from("upload_jobs").upsert({source_short_id:source.id,channel_id:channel.id,scheduled_at:new Date(next).toISOString(),status:"pending"},{onConflict:"source_short_id,channel_id"});
@@ -242,13 +375,15 @@ async function processDueJobs(){
 async function main(){
   required("NEXT_PUBLIC_SUPABASE_URL");required("SUPABASE_SERVICE_ROLE_KEY");required("GOOGLE_CLIENT_ID");required("GOOGLE_CLIENT_SECRET");required("TWITCH_CLIENT_ID");required("TWITCH_CLIENT_SECRET");required("GROQ_API_KEY");
   await ingestTwitchClips();
+  await ingestApprovedStreamerClips().catch(e=>console.error("Approved streamer ingestion failed:",e instanceof Error?e.message:String(e)));
+  await processGameplayUploads().catch(e=>console.error("Gameplay processing failed:",e instanceof Error?e.message:String(e)));
 
-  const {data:channels,error:channelError}=await admin.from("channels").select("id,name,youtube_channel_id,status").eq("status","active");
+  const {data:channels,error:channelError}=await admin.from("channels").select("id,user_id,name,youtube_channel_id,status").eq("status","active");
   if(channelError)throw channelError;
   const channelList=(channels||[]) as Channel[];if(!channelList.length){console.log("No active channels.");return;}
 
   const now=new Date();const start=new Date(now);start.setUTCHours(0,0,0,0);
-  const {data:sources,error:sourceError}=await admin.from("source_shorts").select("*").gte("created_at",start.toISOString()).lt("created_at",new Date(start.getTime()+DAY).toISOString()).order("created_at",{ascending:false}).limit(MAX_PER_DAY);
+  const {data:sources,error:sourceError}=await admin.from("source_shorts").select("*").gte("created_at",start.toISOString()).lt("created_at",new Date(start.getTime()+DAY).toISOString()).order("created_at",{ascending:false}).limit(200);
   if(sourceError)throw sourceError;
   const todaysSources=(sources||[]) as Source[];
   if(todaysSources.length){

@@ -2,15 +2,20 @@ import {redirect} from "next/navigation";
 import Link from "next/link";
 import {createClient} from "../../lib/supabase/server";
 import BillingButton from "./BillingButton";
+import ApprovedStreamerForm from "./ApprovedStreamerForm";
+import GameplayUploadForm from "./GameplayUploadForm";
+import {setStreamerActive} from "./actions";
 
 export default async function Dashboard(){
   const supabase=await createClient();
   const {data:{user}}=await supabase.auth.getUser();
   if(!user) redirect("/login");
 
-  const [{data:twitch},{data:channels}]=await Promise.all([
+  const [{data:twitch},{data:channels},{data:streamers},{data:uploads}]=await Promise.all([
     supabase.from("twitch_connections").select("twitch_login,twitch_display_name").eq("user_id",user.id).maybeSingle(),
-    supabase.from("channels").select("id,name,youtube_channel_id,status,subscriptions(status,current_period_end)").eq("user_id",user.id).order("created_at",{ascending:true})
+    supabase.from("channels").select("id,name,youtube_channel_id,status,subscriptions(status,current_period_end)").eq("user_id",user.id).order("created_at",{ascending:true}),
+    supabase.from("approved_streamers").select("id,twitch_login,twitch_display_name,game_name,active").eq("user_id",user.id).order("created_at",{ascending:true}),
+    supabase.from("gameplay_uploads").select("id,title,game_name,status,clips_created,last_error,created_at").eq("user_id",user.id).order("created_at",{ascending:false}).limit(10)
   ]);
 
   const connected=twitch?.twitch_login;
@@ -56,6 +61,38 @@ export default async function Dashboard(){
               <p className="mt-1 text-xs uppercase tracking-wide text-zinc-500">{channel.status}</p>{channel.subscriptions?.[0]?.status==="active" ? <p className="mt-2 text-xs text-emerald-400">Subscription active</p> : <BillingButton channelId={channel.id}/>}
             </div>)}
           </div>}
+        </div>
+      </div>
+
+      <div className="mt-8 grid gap-6 md:grid-cols-2">
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-8">
+          <h2 className="text-2xl font-semibold">Approved streamers</h2>
+          <p className="mt-2 text-zinc-400">Clip other streamers who gave you permission. They must add your Twitch account as a channel editor; Twitch blocks clip downloads otherwise. Their Shorts get a credit overlay and go only to your channels.</p>
+          {!!streamers?.length && <div className="mt-6 space-y-3">
+            {streamers.map(s=><div key={s.id} className="flex items-center justify-between rounded-xl border border-zinc-800 p-4">
+              <div>
+                <p className="font-medium">{s.twitch_display_name}</p>
+                <p className="text-sm text-zinc-500">twitch.tv/{s.twitch_login}{s.game_name?` · ${s.game_name} only`:""}</p>
+              </div>
+              <form action={setStreamerActive.bind(null,s.id,!s.active)}>
+                <button className={`text-xs uppercase tracking-wide ${s.active?"text-emerald-400":"text-zinc-500"}`}>{s.active?"Active · pause":"Paused · resume"}</button>
+              </form>
+            </div>)}
+          </div>}
+          <ApprovedStreamerForm/>
+        </div>
+
+        <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-8">
+          <h2 className="text-2xl font-semibold">Your gameplay</h2>
+          <p className="mt-2 text-zinc-400">Upload your own recordings. The worker finds the loudest, most intense moments and cuts them into captioned vertical Shorts.</p>
+          {!!uploads?.length && <div className="mt-6 space-y-3">
+            {uploads.map(u=><div key={u.id} className="rounded-xl border border-zinc-800 p-4">
+              <p className="font-medium">{u.title||u.game_name}</p>
+              <p className="mt-1 text-xs uppercase tracking-wide text-zinc-500">{u.status}{u.status==="done"?` · ${u.clips_created} highlights`:""}</p>
+              {u.last_error&&<p className="mt-1 text-xs text-red-400">{u.last_error}</p>}
+            </div>)}
+          </div>}
+          <GameplayUploadForm userId={user.id}/>
         </div>
       </div>
     </div>

@@ -17,7 +17,7 @@ export async function GET(request:Request){
   auth.searchParams.set("response_type","code");
   auth.searchParams.set("client_id",clientId);
   auth.searchParams.set("redirect_uri",redirectUri);
-  auth.searchParams.set("scope","channel:manage:clips");
+  auth.searchParams.set("scope","channel:manage:clips editor:manage:clips");
   auth.searchParams.set("state",state);
 
   const response=NextResponse.redirect(auth);
