@@ -37,3 +37,15 @@ All sources are permission-based so channels don't collect copyright strikes.
 
 Run migration `009_approved_streamers_and_gameplay.sql`, then reconnect Twitch so the token has the
 `editor:manage:clips` scope.
+
+## Pro editing
+
+Every Short is edited automatically before upload (`lib/editor.ts`):
+
+- **Framing**: wide gameplay is zoomed in over a blurred, darkened copy of itself; vertical clips fill the screen
+  (`EDIT_LAYOUT=blur|fill` forces one).
+- **Animated captions**: Whisper word timestamps, 2–3 bold words at a time, the spoken word pops in yellow.
+- **Hook title** for the first 3 seconds and a permanent streamer credit for approved-streamer clips.
+- **Punch-in zoom + impact hit** on the clip's most exciting second (same audio/motion/speech signals as
+  highlight detection; the bass hit is synthesized, so no licensed sound effects).
+- **Color grade + sharpening**, **loudness normalized to -14 LUFS**, and a **progress bar** along the bottom.

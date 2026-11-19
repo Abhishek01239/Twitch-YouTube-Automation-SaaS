@@ -1,6 +1,7 @@
 import {createClient} from "@supabase/supabase-js";
 import {generateMetadata} from "./lib/metadata";
 import {excitementCurve,pickCandidates,aiRank,type Segment} from "./lib/highlights";
+import {buildAss,buildFilterGraph,peakFromCurve,type Word} from "./lib/editor";
 import {execFile} from "node:child_process";
 import {promises as fs} from "node:fs";
 import os from "node:os";
@@ -270,68 +271,62 @@ async function processGameplayUploads(){
   }
 }
 
-type TranscriptSegment={start:number;end:number;text:string};
-
-function srtTime(seconds:number){
-  const ms=Math.max(0,Math.round(seconds*1000));
-  const h=Math.floor(ms/3600000),m=Math.floor((ms%3600000)/60000),s=Math.floor((ms%60000)/1000),milli=ms%1000;
-  return String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0")+","+String(milli).padStart(3,"0");
-}
-function makeSrt(segments:TranscriptSegment[]){
-  return segments.filter(s=>s.text?.trim()).map((s,i)=>(i+1)+"\n"+srtTime(s.start)+" --> "+srtTime(Math.max(s.end,s.start+0.5))+"\n"+s.text.trim()+"\n").join("\n");
-}
-async function transcribeWithGroq(video:Buffer){
-  const dir=await fs.mkdtemp(path.join(os.tmpdir(),"groq-audio-"));
-  const input=path.join(dir,"input.mp4"),audio=path.join(dir,"audio.mp3");
-  try{
-    await fs.writeFile(input,video);
-    await new Promise<void>((resolve,reject)=>execFile("ffmpeg",["-y","-i",input,"-vn","-ac","1","-ar","16000","-b:a","64k",audio],{maxBuffer:1024*1024},e=>e?reject(e):resolve()));
-    const form=new FormData();
-    form.append("file",new Blob([await fs.readFile(audio)],{type:"audio/mpeg"}),"audio.mp3");
-    form.append("model",process.env.GROQ_WHISPER_MODEL||"whisper-large-v3-turbo");
-    form.append("response_format","verbose_json");
-    form.append("timestamp_granularities[]","segment");
-    form.append("temperature","0");
-    const response=await fetch("https://api.groq.com/openai/v1/audio/transcriptions",{method:"POST",headers:{Authorization:"Bearer "+required("GROQ_API_KEY")},body:form});
-    if(!response.ok)throw new Error("Groq transcription failed: "+response.status+" "+await response.text());
-    const data=await response.json() as {text?:string;segments?:TranscriptSegment[]};
-    return {text:data.text||"",segments:data.segments||[]};
-  }finally{await fs.rm(dir,{recursive:true,force:true});}
+// Word-level transcript of a short clip (for animated captions).
+async function transcribeClip(input:string,dir:string):Promise<{text:string;words:Word[];segments:Segment[]}>{
+  const audio=path.join(dir,"audio.mp3");
+  await run("ffmpeg",["-y","-i",input,"-vn","-ac","1","-ar","16000","-b:a","64k",audio]);
+  const form=new FormData();
+  form.append("file",new Blob([await fs.readFile(audio)],{type:"audio/mpeg"}),"audio.mp3");
+  form.append("model",process.env.GROQ_WHISPER_MODEL||"whisper-large-v3-turbo");
+  form.append("response_format","verbose_json");
+  form.append("timestamp_granularities[]","word");
+  form.append("timestamp_granularities[]","segment");
+  form.append("temperature","0");
+  const response=await fetch("https://api.groq.com/openai/v1/audio/transcriptions",{method:"POST",headers:{Authorization:"Bearer "+required("GROQ_API_KEY")},body:form});
+  if(!response.ok)throw new Error("Groq transcription failed: "+response.status+" "+await response.text());
+  const data=await response.json() as {text?:string;words?:Word[];segments?:Segment[]};
+  return {text:data.text||"",words:data.words||[],segments:data.segments||[]};
 }
 
-async function makeVerticalShort(source:Source,video:Buffer,subtitlePath?:string){
-  const dir=await fs.mkdtemp(path.join(os.tmpdir(),"twitch-short-"));
-  const input=path.join(dir,"input.mp4"),output=path.join(dir,"output.mp4");
+async function probe(input:string){
+  const {stdout}=await run("ffprobe",["-v","error","-show_entries","stream=codec_type,width,height:format=duration","-of","json",input]);
+  const data=JSON.parse(stdout) as {streams:Array<{codec_type:string;width?:number;height?:number}>;format:{duration?:string}};
+  const video=data.streams.find(s=>s.codec_type==="video");
+  if(!video?.width||!video.height)throw new Error("Clip has no video stream");
+  return {width:video.width,height:video.height,duration:Number(data.format.duration||0),hasAudio:data.streams.some(s=>s.codec_type==="audio")};
+}
+
+// Edits a raw clip into a finished Short: framing, word-by-word captions, hook title, punch-in zoom +
+// impact hit on the most exciting second, color grade, loudness normalization, progress bar, credit.
+async function proEdit(source:Source,video:Buffer){
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),"pro-edit-"));
+  const input=path.join(dir,"input.mp4"),output=path.join(dir,"output.mp4"),assPath=path.join(dir,"captions.ass");
   try{
     await fs.writeFile(input,video);
-    let vf=subtitlePath
-      ?"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,subtitles="+subtitlePath.replace(/\\/g,"/").replace(/:/g,"\\:")+":force_style='FontName=DejaVu Sans,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=120'"
-      :"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1";
-    if(source.credit_text){
-      const creditFile=path.join(dir,"credit.txt");
-      await fs.writeFile(creditFile,source.credit_text,"utf8");
-      vf+=",drawtext=textfile="+creditFile.replace(/\\/g,"/").replace(/:/g,"\\:")+":font='DejaVu Sans':fontsize=44:fontcolor=white:box=1:boxcolor=black@0.55:boxborderw=14:x=(w-text_w)/2:y=110";
-    }
-    await new Promise<void>((resolve,reject)=>execFile("ffmpeg",["-y","-i",input,"-vf",vf,"-c:v","libx264","-preset","veryfast","-crf","23","-c:a","aac","-b:a","128k","-movflags","+faststart",output],{maxBuffer:1024*1024},e=>e?reject(e):resolve()));
+    const info=await probe(input);
+    const transcript=info.hasAudio?await transcribeClip(input,dir).catch(e=>{console.error("Caption transcription failed:",e.message);return {text:"",words:[] as Word[],segments:[] as Segment[]};}):{text:"",words:[] as Word[],segments:[] as Segment[]};
+    const loudness=info.hasAudio?await loudnessPerSecond(input).catch(()=>[] as number[]):[];
+    const motion=await motionPerSecond(input,Math.max(loudness.length,Math.ceil(info.duration))).catch(()=>[] as number[]);
+    const peak=peakFromCurve(excitementCurve({loudness:loudness.length?loudness:new Array(motion.length).fill(-30),motion,segments:transcript.segments}));
+    const hook=(source.title||"").replace(/#\S+/g,"").trim();
+    const plan={width:info.width,height:info.height,duration:info.duration,words:transcript.words,hook:hook.length<=70?hook:null,credit:source.credit_text,peak,hasAudio:info.hasAudio,layout:(process.env.EDIT_LAYOUT as "blur"|"fill"|undefined)||undefined};
+    await fs.writeFile(assPath,buildAss(plan),"utf8");
+    const {filter,layout}=buildFilterGraph(plan,assPath);
+    await run("ffmpeg",["-y","-i",input,"-filter_complex",filter,"-map","[vout]","-map","[aout]","-t",String(info.duration),"-r","30","-c:v","libx264","-preset","medium","-crf","20","-profile:v","high","-c:a","aac","-b:a","192k","-ar","48000","-movflags","+faststart",output]);
+    console.log(`Pro edit for ${source.id}: ${layout} layout, ${transcript.words.length} caption words, punch-in ${peak!=null?`at ${peak}s`:"skipped"}`);
     return await fs.readFile(output);
   }finally{await fs.rm(dir,{recursive:true,force:true});}
 }
 
 async function ensureEditedAsset(source:Source,video:Buffer){
   if(source.edited_storage_path)return source.edited_storage_path;
-  const transcript=await transcribeWithGroq(video);
-  const dir=await fs.mkdtemp(path.join(os.tmpdir(),"captions-")),srt=path.join(dir,"captions.srt");
-  try{
-    await fs.writeFile(srt,makeSrt(transcript.segments),"utf8");
-    const edited=await makeVerticalShort(source,video,transcript.segments.length?srt:undefined);
-    const storagePath=source.storage_path?source.storage_path.replace(/^clips\//,"edited/").replace(/\.mp4$/i,"-9x16-captioned.mp4"):"edited/"+source.id+"-9x16-captioned.mp4";
-    const {error}=await admin.storage.from(SOURCE_BUCKET).upload(storagePath,edited,{contentType:"video/mp4",upsert:true});
-    if(error)throw new Error("Edited short storage upload failed: "+error.message);
-    const {error:updateError}=await admin.from("source_shorts").update({edited_storage_path:storagePath}).eq("id",source.id);
-    if(updateError)throw updateError;
-    console.log("Captioned short created for "+source.id+": "+transcript.text.slice(0,120));
-    return storagePath;
-  }finally{await fs.rm(dir,{recursive:true,force:true});}
+  const edited=await proEdit(source,video);
+  const storagePath=source.storage_path?source.storage_path.replace(/^(clips|gameplay)\//,"edited/").replace(/\.mp4$/i,"-pro.mp4"):"edited/"+source.id+"-pro.mp4";
+  const {error}=await admin.storage.from(SOURCE_BUCKET).upload(storagePath,edited,{contentType:"video/mp4",upsert:true});
+  if(error)throw new Error("Edited short storage upload failed: "+error.message);
+  const {error:updateError}=await admin.from("source_shorts").update({edited_storage_path:storagePath}).eq("id",source.id);
+  if(updateError)throw updateError;
+  return storagePath;
 }
 
 async function downloadVideo(source:Source){

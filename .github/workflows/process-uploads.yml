@@ -21,7 +21,7 @@ jobs:
           cache: npm
       - run: npm install
       - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
       - name: Run upload worker
         run: npm run worker
         env:
