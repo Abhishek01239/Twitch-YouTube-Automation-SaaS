@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "worker": "tsx worker.ts"
+    "worker": "tsx worker.ts",
+    "test": "tsx --test lib/*.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "latest",

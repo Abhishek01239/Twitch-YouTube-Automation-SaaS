@@ -12,7 +12,7 @@ concurrency:
 jobs:
   process:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -33,5 +33,6 @@ jobs:
           TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_WHISPER_MODEL: ${{ secrets.GROQ_WHISPER_MODEL }}
+          GROQ_LLM_MODEL: ${{ secrets.GROQ_LLM_MODEL }}
           RAZORPAY_KEY_ID: ${{ secrets.RAZORPAY_KEY_ID }}
           RAZORPAY_KEY_SECRET: ${{ secrets.RAZORPAY_KEY_SECRET }}

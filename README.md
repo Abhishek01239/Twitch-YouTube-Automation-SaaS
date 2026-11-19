@@ -23,8 +23,17 @@ All sources are permission-based so channels don't collect copyright strikes.
    account as a **channel editor** (Creator Dashboard → Settings → Roles Manager); Twitch's clip
    download API refuses otherwise. These Shorts get a `twitch.tv/<streamer>` credit overlay and are
    only distributed to the approving user's own channels.
-3. **Your own gameplay**: upload a recording on the dashboard. The worker measures per-second audio
-   loudness, picks the most intense non-overlapping windows, and cuts them into captioned 9:16 Shorts.
+3. **Your own gameplay**: upload a recording on the dashboard (gameplay or a downloaded VOD of your
+   own stream) and the worker picks the best moments for you (`lib/highlights.ts`):
+   - **Audio spikes**: moments far louder than the surrounding minute (gunfire, crashes, yelling),
+     so a constantly loud game doesn't hide the real peaks.
+   - **On-screen action**: frame-to-frame pixel change (chases, explosions, fast camera).
+   - **Hype speech**: Whisper transcript scanned for "oh my god", "let's go", "clip that", laughing, fast talking.
+   - **Clean cuts**: the peak lands ~60% into the clip (build-up + payoff) and cuts snap to sentence boundaries.
+   - **AI judge**: the top candidates' transcripts go to a Groq LLM (`GROQ_LLM_MODEL`, default
+     `llama-3.3-70b-versatile`) which picks the best and writes titles. Falls back to signal ranking.
+
+   Run `npm test` for the highlight-detection tests.
 
 Run migration `009_approved_streamers_and_gameplay.sql`, then reconnect Twitch so the token has the
 `editor:manage:clips` scope.

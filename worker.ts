@@ -1,5 +1,6 @@
 import {createClient} from "@supabase/supabase-js";
 import {generateMetadata} from "./lib/metadata";
+import {excitementCurve,pickCandidates,aiRank,type Segment} from "./lib/highlights";
 import {execFile} from "node:child_process";
 import {promises as fs} from "node:fs";
 import os from "node:os";
@@ -168,18 +169,55 @@ async function loudnessPerSecond(input:string){
   return [...stdout.matchAll(/RMS_level=(-?[\d.]+|-inf)/g)].map(m=>m[1]==="-inf"?-100:Math.max(-100,Number(m[1])));
 }
 
-// Picks the loudest non-overlapping windows: shouting, explosions, chases and crashes are usually the highlights.
-export function pickHighlights(levels:number[],windowSeconds:number,count:number){
-  if(levels.length<=windowSeconds)return levels.length?[0]:[];
-  const prefix=[0];for(const l of levels)prefix.push(prefix[prefix.length-1]+l+100);
-  const scores=levels.slice(0,levels.length-windowSeconds+1).map((_,start)=>({start,score:prefix[start+windowSeconds]-prefix[start]}));
-  scores.sort((a,b)=>b.score-a.score);
-  const picked:number[]=[];
-  for(const {start} of scores){
-    if(picked.length>=count)break;
-    if(picked.every(p=>Math.abs(p-start)>=windowSeconds))picked.push(start);
+// Per-second on-screen action: average pixel change between consecutive frames (chases, explosions,
+// fast camera moves). Sampled at 4 fps on a tiny frame so long recordings stay cheap to analyze.
+async function motionPerSecond(input:string,seconds:number){
+  const {stdout}=await run("ffmpeg",["-hide_banner","-nostats","-i",input,"-an","-vf","fps=4,scale=160:-2,format=gray,tblend=all_mode=difference,signalstats,metadata=mode=print:key=lavfi.signalstats.YAVG:file=-","-f","null","-"]);
+  const sum=new Array(seconds).fill(0),count=new Array(seconds).fill(0);let time=0;
+  for(const line of stdout.split("\n")){
+    const t=line.match(/pts_time:([\d.]+)/);if(t)time=Number(t[1]);
+    const v=line.match(/YAVG=([\d.]+)/);
+    if(v){const i=Math.floor(time);if(i<seconds){sum[i]+=Number(v[1]);count[i]++;}}
   }
-  return picked.sort((a,b)=>a-b);
+  return sum.map((s,i)=>count[i]?s/count[i]:0);
+}
+
+// Full-recording transcript, in 10-minute chunks so long streams stay under the API's file limit.
+async function transcribeRecording(input:string,seconds:number,dir:string):Promise<Segment[]>{
+  if(!process.env.GROQ_API_KEY)return [];
+  const segments:Segment[]=[];
+  for(let offset=0;offset<seconds;offset+=600){
+    const chunk=path.join(dir,`audio-${offset}.mp3`);
+    try{
+      await run("ffmpeg",["-y","-ss",String(offset),"-t","600","-i",input,"-vn","-ac","1","-ar","16000","-b:a","48k",chunk]);
+      const form=new FormData();
+      form.append("file",new Blob([await fs.readFile(chunk)],{type:"audio/mpeg"}),"audio.mp3");
+      form.append("model",process.env.GROQ_WHISPER_MODEL||"whisper-large-v3-turbo");
+      form.append("response_format","verbose_json");
+      form.append("timestamp_granularities[]","segment");
+      form.append("temperature","0");
+      const response=await fetch("https://api.groq.com/openai/v1/audio/transcriptions",{method:"POST",headers:{Authorization:"Bearer "+process.env.GROQ_API_KEY},body:form});
+      if(!response.ok)throw new Error(`${response.status} ${await response.text()}`);
+      const data=await response.json() as {segments?:Segment[]};
+      for(const seg of data.segments||[])segments.push({start:seg.start+offset,end:seg.end+offset,text:seg.text});
+    }catch(error){console.error(`Transcription chunk at ${offset}s failed:`,error instanceof Error?error.message:String(error));}
+    finally{await fs.rm(chunk,{force:true});}
+  }
+  return segments;
+}
+
+// Finds the most exciting moments: audio spikes, on-screen action and hype speech, then an AI judge
+// picks the clips most likely to perform and titles them.
+async function findHighlights(input:string,dir:string,opts:{length:number;count:number;game:string}){
+  const loudness=await loudnessPerSecond(input);
+  if(!loudness.length)throw new Error("Recording has no audio track to detect highlights from");
+  const [motion,segments]=await Promise.all([
+    motionPerSecond(input,loudness.length).catch(e=>{console.error("Motion analysis failed:",e.message);return [] as number[];}),
+    transcribeRecording(input,loudness.length,dir)
+  ]);
+  const curve=excitementCurve({loudness,motion,segments});
+  const candidates=pickCandidates(curve,{length:opts.length,count:opts.count*3,segments});
+  return aiRank(candidates,opts.count,{game:opts.game,apiKey:process.env.GROQ_API_KEY,model:process.env.GROQ_LLM_MODEL});
 }
 
 type GameplayUpload={id:string;user_id:string;storage_path:string;title:string|null;game_name:string;clip_count:number;clip_seconds:number};
@@ -197,16 +235,14 @@ async function processGameplayUploads(){
       const input=path.join(dir,"input"+(path.extname(upload.storage_path)||".mp4"));
       await fs.writeFile(input,Buffer.from(await data.arrayBuffer()));
 
-      const levels=await loudnessPerSecond(input);
-      if(!levels.length)throw new Error("Recording has no audio track to detect highlights from");
-      const starts=pickHighlights(levels,upload.clip_seconds,upload.clip_count);
+      const highlights=await findHighlights(input,dir,{length:upload.clip_seconds,count:upload.clip_count,game:upload.game_name});
       let created=0;
-      for(const [i,start] of starts.entries()){
+      for(const [i,clip] of highlights.entries()){
         const dedupeKey=`gameplay:${upload.id}:${i}`;
         const exists=await admin.from("source_shorts").select("id").eq("dedupe_key",dedupeKey).maybeSingle();
         if(exists.data){created++;continue;}
         const clipPath=path.join(dir,`clip-${i}.mp4`);
-        await run("ffmpeg",["-y","-ss",String(start),"-i",input,"-t",String(upload.clip_seconds),"-c:v","libx264","-preset","veryfast","-crf","20","-c:a","aac","-b:a","160k","-movflags","+faststart",clipPath]);
+        await run("ffmpeg",["-y","-ss",clip.start.toFixed(2),"-i",input,"-t",(clip.end-clip.start).toFixed(2),"-c:v","libx264","-preset","veryfast","-crf","20","-c:a","aac","-b:a","160k","-movflags","+faststart",clipPath]);
         const storagePath=`gameplay/${upload.user_id}/${upload.id}-${i}.mp4`;
         const {error:storeError}=await admin.storage.from(SOURCE_BUCKET).upload(storagePath,await fs.readFile(clipPath),{contentType:"video/mp4",upsert:true});
         if(storeError)throw new Error(`Highlight storage upload failed: ${storeError.message}`);
@@ -216,7 +252,7 @@ async function processGameplayUploads(){
           dedupe_key:dedupeKey,
           owner_user_id:upload.user_id,
           source_kind:"own_gameplay",
-          title:upload.title?`${upload.title} #${i+1}`.slice(0,100):meta.title,
+          title:(clip.title||(upload.title?`${upload.title} #${i+1}`:meta.title)).slice(0,100),
           description:meta.description,
           tags:meta.tags,
           hashtags:meta.hashtags
@@ -225,7 +261,7 @@ async function processGameplayUploads(){
         created++;
       }
       await admin.from("gameplay_uploads").update({status:"done",clips_created:created}).eq("id",upload.id);
-      console.log(`Cut ${created} highlights from gameplay upload ${upload.id}`);
+      console.log(`Cut ${created} highlights from gameplay upload ${upload.id}:`,highlights.map(h=>`${Math.round(h.start)}s-${Math.round(h.end)}s${h.reason?` (${h.reason})`:""}`).join(", "));
     }catch(error){
       const message=error instanceof Error?error.message:String(error);
       await admin.from("gameplay_uploads").update({status:"failed",last_error:message}).eq("id",upload.id);
