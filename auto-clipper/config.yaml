@@ -34,9 +34,17 @@ clips:
   language: auto          # auto | en | hi | ...
 
 posting:
+  # Posts go to the Zernio account that owns the ZERNIO_API_KEY secret.
+  # Each entry picks connected accounts on that key: by `username`, by `account_id`,
+  # or (neither given) every connected account on that platform.
+  # Find ids by running the workflow with "list_accounts" ticked.
   accounts:
     - platform: youtube
-      account_id: "6af9bd4fb348dd18fdb86d05"   # galaxyofgamesar07 (Zernio)
+      # username: "your_new_channel"
+      # account_id: ""
+  # Accounts that must NEVER be posted to, whatever key is used.
+  blocked_account_ids:
+    - "6af9bd4fb348dd18fdb86d05"   # galaxyofgamesar07 (original Zernio account) - do not touch
   max_posts_per_run: 3
   first_delay_minutes: 20  # first post goes out this long after the run
   gap_minutes: 120         # minimum gap between posts (kept across runs)

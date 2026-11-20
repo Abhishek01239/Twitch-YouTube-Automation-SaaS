@@ -52,14 +52,17 @@ def make_clips(src: Source, cfg: dict, work: Path, out_dir: Path) -> list[dict]:
     return _render_segments(segments, src, cfg, out_dir)
 
 
-def build_post(meta: dict, media_url: str, when: datetime, pcfg: dict) -> dict:
+def build_post(meta: dict, media_url: str, when: datetime, pcfg: dict, accounts: list[dict]) -> dict:
     fields = {"title": (meta["title"] or "Gameplay highlight").strip(), "creator": meta["creator"],
               "source_url": meta["source_url"]}
     title = pcfg.get("title_template", "{title}").format(**fields)[:100]
     desc = pcfg.get("description_template", "{title}").format(**fields).strip()
     yt = pcfg.get("youtube", {})
     platforms = []
-    for acc in pcfg["accounts"]:
+    blocked = {str(b) for b in pcfg.get("blocked_account_ids") or []}
+    for acc in accounts:
+        if str(acc["account_id"]) in blocked:
+            raise RuntimeError(f"Refusing to post to blocked account {acc['account_id']}")
         entry = {"platform": acc["platform"], "accountId": acc["account_id"]}
         if acc["platform"] == "youtube":
             entry["platformSpecificData"] = {"title": title, "visibility": yt.get("visibility", "public"),
@@ -79,7 +82,14 @@ def main() -> None:
     ap.add_argument("--dry-run", action="store_true", default=os.environ.get("DRY_RUN", "").lower() in ("1", "true", "yes"))
     ap.add_argument("--max-posts", type=int)
     ap.add_argument("--out", default=str(ROOT / "output"))
+    ap.add_argument("--list-accounts", action="store_true", help="Print accounts connected to ZERNIO_API_KEY and exit")
     args = ap.parse_args()
+
+    if args.list_accounts:
+        from .zernio import Zernio
+        for a in Zernio().list_accounts():
+            log(f"{a.get('platform'):<12} {str(a.get('username')):<30} account_id={a['_id']}")
+        return
 
     cfg = yaml.safe_load(Path(args.config).read_text())
     pcfg = cfg["posting"]
@@ -144,21 +154,26 @@ def main() -> None:
         when = max(when, datetime.fromisoformat(state["last_scheduled"]) + gap)
 
     zernio = None
+    blocked = {str(b) for b in pcfg.get("blocked_account_ids") or []}
+    accounts = [{"platform": a["platform"], "account_id": a.get("account_id") or f"<{a.get('username') or a['platform']}>"}
+                for a in pcfg["accounts"]]
     if clips and not args.dry_run:
         from .zernio import Zernio
         zernio = Zernio()
+        accounts = zernio.resolve_accounts(pcfg["accounts"], blocked)
+        log("[zernio] posting to: " + ", ".join(f"{a['platform']}:{a['username']} ({a['account_id']})" for a in accounts))
 
     posted_sources: set[str] = set()
     failed_sources: set[str] = set()
     for meta in clips:
         path = out_dir / meta["file"]
         if args.dry_run:
-            body = build_post(meta, "<uploaded-url>", when, pcfg)
+            body = build_post(meta, "<uploaded-url>", when, pcfg, accounts)
             log(f"[dry-run] would schedule {meta['file']} at {body['scheduledFor']}: {body['platforms'][0].get('platformSpecificData', {}).get('title', '')}")
         else:
             try:
                 media_url = zernio.upload(path)
-                body = build_post(meta, media_url, when, pcfg)
+                body = build_post(meta, media_url, when, pcfg, accounts)
                 key = str(uuid.uuid5(uuid.NAMESPACE_URL, meta["clip_id"]))
                 resp = zernio.create_post(body, key)
                 post_id = (resp.get("post") or {}).get("_id")

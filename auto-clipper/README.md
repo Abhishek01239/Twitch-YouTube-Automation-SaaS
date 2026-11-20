@@ -18,7 +18,16 @@ Runs on **GitHub Actions** every 6 hours:
    | `ZERNIO_API_KEY` | posting (zernio.com → API keys) |
    | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` | Twitch sources (already used by the main worker) |
    | `YTDLP_COOKIES` | optional: YouTube sources. Paste a Netscape `cookies.txt` export. YouTube blocks downloads from GitHub's servers without it. |
-2. **Edit `config.yaml`:** add your Twitch login(s) under `sources.twitch_clips.channels` (and/or `twitch_vods`, `youtube`). The Zernio YouTube account (`galaxyofgamesar07`) is already filled in.
+2. **Edit `config.yaml`:** add your Twitch login(s) under `sources.twitch_clips.channels` (and/or `twitch_vods`, `youtube`).
+
+### Which Zernio account posts
+Posting uses only the Zernio account that owns the `ZERNIO_API_KEY` secret. To post from a different Zernio account:
+1. Sign up for or log in to the other Zernio account, connect the YouTube channel there, and create an API key.
+2. Save that key as the `ZERNIO_API_KEY` repository secret.
+3. Run the workflow with **list_accounts** ticked. The log shows that key's channels and their `account_id`s.
+4. In `config.yaml`, set `posting.accounts[].username` (or `account_id`) to the channel to post to.
+
+`posting.blocked_account_ids` lists accounts that must never be posted to. The run stops with an error if a post would target one. The original account `galaxyofgamesar07` is blocked by default.
 3. **Test:** Actions → *Auto Clipper* → *Run workflow*, with **Dry run** ticked. Download the `clips-…` artifact and watch the clips.
 4. **Go live:**
    - Manual runs: untick *Dry run*.

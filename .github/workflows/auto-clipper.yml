@@ -17,6 +17,10 @@ on:
         description: "Optional: max clips to post this run"
         type: string
         required: false
+      list_accounts:
+        description: "Only list the accounts connected to ZERNIO_API_KEY (shows account ids in the log)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # to commit auto-clipper/state/state.json (avoids re-posting)
@@ -85,7 +89,9 @@ jobs:
           TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
           INPUT_URL: ${{ inputs.url }}
           INPUT_MAX: ${{ inputs.max_posts }}
+          INPUT_LIST: ${{ inputs.list_accounts }}
         run: |
+          if [ "$INPUT_LIST" = "true" ]; then python -m clipper.main --list-accounts; exit 0; fi
           args=()
           [ -n "$INPUT_URL" ] && args+=(--url "$INPUT_URL")
           [ -n "$INPUT_MAX" ] && args+=(--max-posts "$INPUT_MAX")

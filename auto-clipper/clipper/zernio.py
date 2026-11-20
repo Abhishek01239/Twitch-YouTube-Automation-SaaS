@@ -27,6 +27,41 @@ class Zernio:
             time.sleep(2 ** attempt * 3)
         return r
 
+    def list_accounts(self) -> list[dict]:
+        r = self._req("GET", "/accounts")
+        r.raise_for_status()
+        return r.json().get("accounts", [])
+
+    def resolve_accounts(self, wanted: list[dict], blocked: set[str]) -> list[dict]:
+        """Turn config entries into [{platform, account_id}] using only accounts this API key owns.
+
+        An entry may give `account_id`, or `username` (matched case-insensitively), or neither
+        (then every connected account on that platform is used). Blocked ids are never returned.
+        """
+        owned = self.list_accounts()
+        owned_ids = {a["_id"] for a in owned}
+        out = []
+        for w in wanted:
+            platform = w["platform"]
+            if w.get("account_id"):
+                matches = [a for a in owned if a["_id"] == str(w["account_id"])]
+                if not matches:
+                    raise RuntimeError(f"Account {w['account_id']} is not connected to this ZERNIO_API_KEY")
+            else:
+                matches = [a for a in owned if a.get("platform") == platform]
+                if w.get("username"):
+                    u = w["username"].lstrip("@").lower()
+                    matches = [a for a in matches if str(a.get("username", "")).lstrip("@").lower() == u]
+            for a in matches:
+                if a["_id"] in blocked:
+                    raise RuntimeError(f"Refusing to post: account {a['_id']} ({a.get('username')}) is in blocked_account_ids")
+                out.append({"platform": a["platform"], "account_id": a["_id"], "username": a.get("username")})
+        if not out:
+            raise RuntimeError(f"No matching accounts for this ZERNIO_API_KEY (connected: "
+                               f"{[(a.get('platform'), a.get('username')) for a in owned]})")
+        assert all(o["account_id"] in owned_ids for o in out)
+        return out
+
     def upload(self, path: Path) -> str:
         r = self._req("POST", "/media/presign", json={"filename": path.name, "contentType": "video/mp4",
                                                       "size": path.stat().st_size})
