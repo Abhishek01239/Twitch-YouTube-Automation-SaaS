@@ -1,0 +1,54 @@
+# Auto Clipper configuration.
+# Only clip channels you own or have permission to repost.
+
+sources:
+  # Viewer-made Twitch clips from the last `period_hours` (needs TWITCH_CLIENT_ID/SECRET).
+  twitch_clips:
+    channels: []          # Twitch logins, e.g. ["your_twitch_login"]
+    period_hours: 24
+    max_per_channel: 3
+    min_views: 0
+
+  # Full Twitch VODs: finds loud/hype moments by audio energy (needs TWITCH_CLIENT_ID/SECRET).
+  twitch_vods:
+    channels: []
+    max_vods_per_channel: 1
+    max_age_hours: 48
+
+  # YouTube videos/streams. Accepts video URLs or channel tabs like
+  # https://www.youtube.com/@handle/streams (newest `max_videos` are used).
+  # Note: YouTube often blocks downloads from GitHub's servers; add a
+  # YTDLP_COOKIES secret (cookies.txt contents) if downloads fail.
+  youtube:
+    urls: []
+    max_videos: 1
+
+clips:
+  length: 30              # seconds per Short (max 60 recommended)
+  lead_in: 6              # seconds kept before the peak
+  per_video: 3            # highlights taken from each long video
+  min_score: 2.0          # audio hype threshold (z-score); lower = more clips
+  layout: fit             # fit = gameplay centred on blurred background, fill = centre crop
+  captions: true
+  whisper_model: base     # tiny | base | small (bigger = better, slower)
+  language: auto          # auto | en | hi | ...
+
+posting:
+  accounts:
+    - platform: youtube
+      account_id: "6af9bd4fb348dd18fdb86d05"   # galaxyofgamesar07 (Zernio)
+  max_posts_per_run: 3
+  first_delay_minutes: 20  # first post goes out this long after the run
+  gap_minutes: 120         # minimum gap between posts (kept across runs)
+  youtube:
+    visibility: public     # public | unlisted | private
+    category_id: "20"      # Gaming
+    made_for_kids: false
+  title_template: "{title} #shorts"
+  description_template: |
+    {title}
+
+    🎮 Credit: {creator} — {source_url}
+
+    #gaming #shorts #twitch
+  tags: ["gaming", "shorts", "highlights"]

@@ -1,0 +1,5 @@
+output/
+work/
+cookies.txt
+__pycache__/
+*.pyc
