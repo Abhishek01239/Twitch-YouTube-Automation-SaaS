@@ -1,4 +1,4 @@
-# AI Lead Responder: Google Form → Claude → Email/WhatsApp → Google Sheet
+# AI Lead Responder: Google Form → AI (Groq or Claude) → Email/WhatsApp → Google Sheet
 
 A Google Apps Script automation. It runs entirely inside your Google account, so there is no server to host.
 
@@ -6,7 +6,7 @@ A Google Apps Script automation. It runs entirely inside your Google account, so
 Lead fills Google Form
         │  (installable "On form submit" trigger)
         ▼
-handleFormSubmit ──► Claude API (structured JSON output)
+handleFormSubmit ──► Groq or Claude API (structured JSON output)
         │              • email subject + body
         │              • WhatsApp message
         │              • lead score (hot/warm/cold) + one-line summary
@@ -29,7 +29,8 @@ Failed leads are still logged, with the error, and **Lead Automation → Retry f
 
    | Property | Required | Example / default |
    |---|---|---|
-   | `ANTHROPIC_API_KEY` | ✅ | your key from console.anthropic.com |
+   | `GROQ_API_KEY` | ✅ one of these two | your key from console.groq.com (starts `gsk_`) |
+   | `ANTHROPIC_API_KEY` | ✅ one of these two | your key from console.anthropic.com |
    | `BUSINESS_NAME` | recommended | `Acme Studio` |
    | `BUSINESS_CONTEXT` | recommended | 2–5 sentences: what you sell, who for, what the next step is. The AI only states facts written here. |
    | `SENDER_NAME` | recommended | `Asha` |
@@ -37,6 +38,8 @@ Failed leads are still logged, with the error, and **Lead Automation → Retry f
    | `EMAIL_MODE` | optional | `send` (default) · `draft` (human reviews in Gmail) · `off` |
    | `WHATSAPP_MODE` | optional | `link` (default) · `cloud_api` · `off` |
    | `DEFAULT_COUNTRY_CODE` | optional | `91`, added to 10-digit local numbers |
+   | `AI_PROVIDER` | optional | `groq` or `anthropic`; leave blank to use whichever key is set (Claude wins if both are) |
+   | `GROQ_MODEL` | optional | `openai/gpt-oss-120b` (default; supports strict JSON schema) · `openai/gpt-oss-20b` (faster/cheaper) |
    | `CLAUDE_MODEL` | optional | `claude-opus-5-5` |
 
 4. Reload the Sheet. A **Lead Automation** menu appears. Run:
@@ -57,16 +60,17 @@ Already have a form? Link it to the Sheet (Form → Responses → Link to Sheets
 
 ## Safeguards built in
 
-- Form answers are passed to Claude as data, and the prompt tells it not to follow instructions written in them. It is also told not to invent prices, discounts or promises.
+- Form answers are passed to the AI as data, and the prompt tells it not to follow instructions written in them. It is also told not to invent prices, discounts or promises.
 - Answers that start with `= + - @` are escaped, so a lead can't inject spreadsheet formulas.
 - Rate limits, overloads and 5xx errors are retried with backoff (`retry-after` is respected).
-- If Claude declines a request, the API falls back to another model automatically (`fallbacks: "default"`). If every model declines, that is logged.
+- Claude: if it declines a request, the API falls back to another model automatically (`fallbacks: "default"`). If every model declines, that is logged.
+- Groq: strict JSON-schema output, and the reply is checked for every field before anything is sent.
 - A script lock prevents overlapping writes when several leads submit at once.
 - Anyone can type any email address into a public form. If you're worried about abuse, set `EMAIL_MODE=draft` and review replies before sending.
 
 ## Tests
 
-The tests run offline in Node with mocked Google services and a mocked Claude API:
+The tests run offline in Node with mocked Google services and mocked Groq/Claude APIs:
 
 ```bash
 node test/run-tests.js

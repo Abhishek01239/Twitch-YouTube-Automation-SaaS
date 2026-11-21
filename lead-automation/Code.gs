@@ -5,9 +5,11 @@
  * (Sheet > Extensions > Apps Script), set the Script Properties listed in
  * README.md, then run `setup` once from the editor or the "Lead Automation" menu.
  *
+ * AI provider: Groq (GROQ_API_KEY) or Claude (ANTHROPIC_API_KEY).
+ *
  * Flow per submission (installable "On form submit" trigger -> handleFormSubmit):
  *   1. Read the answers from the event and normalise them into a lead object.
- *   2. Ask Claude for a personalised email + WhatsApp message (structured JSON).
+ *   2. Ask the AI for a personalised email + WhatsApp message (structured JSON).
  *   3. Deliver on the lead's preferred channel (email via Gmail, WhatsApp via
  *      a click-to-chat link or the WhatsApp Cloud API).
  *   4. Append one row to the "Leads Log" tab with the lead, the AI output and
@@ -50,7 +52,9 @@ const FIELD_PATTERNS = {
 };
 
 const DEFAULTS = {
+  AI_PROVIDER: '',             // anthropic | groq - blank = whichever API key is set
   CLAUDE_MODEL: 'claude-opus-5-5',
+  GROQ_MODEL: 'openai/gpt-oss-120b',
   BUSINESS_NAME: 'Our Company',
   BUSINESS_CONTEXT: 'We help businesses grow with tailored digital services.',
   SENDER_NAME: 'The Team',
@@ -67,12 +71,15 @@ function getConfig_() {
   Object.keys(DEFAULTS).forEach(function (k) {
     cfg[k] = (props[k] || '').trim() || DEFAULTS[k];
   });
-  ['ANTHROPIC_API_KEY', 'REPLY_TO', 'WHATSAPP_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID',
+  ['ANTHROPIC_API_KEY', 'GROQ_API_KEY', 'REPLY_TO', 'WHATSAPP_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID',
     'WHATSAPP_TEMPLATE_NAME'].forEach(function (k) {
     cfg[k] = (props[k] || '').trim();
   });
   cfg.EMAIL_MODE = cfg.EMAIL_MODE.toLowerCase();
   cfg.WHATSAPP_MODE = cfg.WHATSAPP_MODE.toLowerCase();
+  cfg.AI_PROVIDER = cfg.AI_PROVIDER.toLowerCase() ||
+    (cfg.GROQ_API_KEY && !cfg.ANTHROPIC_API_KEY ? 'groq' : 'anthropic');
+  cfg.MODEL = cfg.AI_PROVIDER === 'groq' ? cfg.GROQ_MODEL : cfg.CLAUDE_MODEL;
   return cfg;
 }
 
@@ -106,7 +113,9 @@ function setup() {
   const cfg = getConfig_();
   const msg = 'Setup complete. Log tab: "' + LOG_SHEET_NAME + '". Trigger ' +
     (exists ? 'already installed.' : 'installed.') +
-    (cfg.ANTHROPIC_API_KEY ? '' : '\n\nWARNING: Script Property ANTHROPIC_API_KEY is not set yet.');
+    '\nAI provider: ' + cfg.AI_PROVIDER + ' (' + cfg.MODEL + ')' +
+    (cfg.ANTHROPIC_API_KEY || cfg.GROQ_API_KEY ? '' :
+      '\n\nWARNING: set Script Property GROQ_API_KEY or ANTHROPIC_API_KEY.');
   notify_(msg);
 }
 
@@ -156,7 +165,7 @@ function processLead_(lead, existingRow) {
     whatsappLink: '',
     deliveryChannel: '',
     deliveryStatus: '',
-    model: cfg.CLAUDE_MODEL,
+    model: cfg.MODEL,
     error: '',
   };
 
@@ -239,7 +248,7 @@ function validateLead_(lead) {
 }
 
 // ---------------------------------------------------------------------------
-// AI generation (Claude Messages API via UrlFetchApp - Apps Script has no SDK)
+// AI generation (Groq or Claude, chosen by AI_PROVIDER / whichever key is set)
 // ---------------------------------------------------------------------------
 
 const RESPONSE_SCHEMA = {
@@ -299,6 +308,55 @@ function buildUserPrompt_(lead) {
 }
 
 function generateResponse_(lead, cfg) {
+  const result = cfg.AI_PROVIDER === 'groq' ? callGroq_(lead, cfg) : callClaude_(lead, cfg);
+  RESPONSE_SCHEMA.required.forEach(function (k) {
+    if (typeof result.ai[k] !== 'string' || !result.ai[k].trim()) {
+      throw new Error('AI output missing "' + k + '".');
+    }
+  });
+  return result;
+}
+
+/** Groq (OpenAI-compatible chat completions) with strict JSON-schema output. */
+function callGroq_(lead, cfg) {
+  if (!cfg.GROQ_API_KEY) throw new Error('Script Property GROQ_API_KEY is not set.');
+
+  const payload = {
+    model: cfg.GROQ_MODEL,
+    messages: [
+      { role: 'system', content: buildSystemPrompt_(cfg) },
+      { role: 'user', content: buildUserPrompt_(lead) + '\n\nRespond with JSON only.' },
+    ],
+    response_format: {
+      type: 'json_schema',
+      json_schema: { name: 'lead_reply', strict: true, schema: RESPONSE_SCHEMA },
+    },
+    temperature: 0.6,
+    max_completion_tokens: 4000,
+  };
+  // gpt-oss models are reasoning models: keep reasoning short and out of the reply.
+  if (/gpt-oss/i.test(cfg.GROQ_MODEL)) {
+    payload.reasoning_effort = 'low';
+    payload.include_reasoning = false;
+  }
+
+  const res = fetchWithRetry_('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { Authorization: 'Bearer ' + cfg.GROQ_API_KEY },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true,
+  });
+
+  const body = JSON.parse(res.getContentText());
+  const choice = body.choices && body.choices[0];
+  if (!choice || !choice.message || !choice.message.content) throw new Error('Groq returned no content.');
+  if (choice.finish_reason === 'length') throw new Error('Groq response was cut off (max_completion_tokens).');
+  return { ai: JSON.parse(choice.message.content), model: 'groq:' + (body.model || cfg.GROQ_MODEL) };
+}
+
+/** Claude Messages API (Apps Script has no SDK, so raw HTTP via UrlFetchApp). */
+function callClaude_(lead, cfg) {
   if (!cfg.ANTHROPIC_API_KEY) throw new Error('Script Property ANTHROPIC_API_KEY is not set.');
 
   const payload = {
@@ -337,11 +395,7 @@ function generateResponse_(lead, cfg) {
   const textBlock = (body.content || []).filter(function (b) { return b.type === 'text'; }).pop();
   if (!textBlock) throw new Error('Claude returned no text content.');
 
-  const ai = JSON.parse(textBlock.text);
-  RESPONSE_SCHEMA.required.forEach(function (k) {
-    if (typeof ai[k] !== 'string' || !ai[k].trim()) throw new Error('AI output missing "' + k + '".');
-  });
-  return { ai: ai, model: body.model || cfg.CLAUDE_MODEL };
+  return { ai: JSON.parse(textBlock.text), model: body.model || cfg.CLAUDE_MODEL };
 }
 
 /** Retries rate limits (429), overloads (529) and 5xx with exponential backoff. */

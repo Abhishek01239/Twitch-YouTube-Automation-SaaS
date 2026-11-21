@@ -268,6 +268,59 @@ test('phone normalisation', () => {
   assert.strictEqual(n('9876543210', ''), '9876543210');
 });
 
+function groqResponse(ai, finish) {
+  return { code: 200, body: { model: 'openai/gpt-oss-120b',
+    choices: [{ finish_reason: finish || 'stop', message: { role: 'assistant', content: JSON.stringify(ai || AI_OUTPUT) } }] } };
+}
+
+test('groq: picked automatically when only GROQ_API_KEY is set', () => {
+  const env = makeEnv({ props: { ANTHROPIC_API_KEY: '', GROQ_API_KEY: 'gsk_test' }, responses: [groqResponse()] });
+  env.ctx.handleFormSubmit(formEvent());
+  const req = env.calls.fetch[0];
+  assert.strictEqual(req.url, 'https://api.groq.com/openai/v1/chat/completions');
+  assert.strictEqual(req.options.headers.Authorization, 'Bearer gsk_test');
+  assert.strictEqual(req.payload.model, 'openai/gpt-oss-120b');
+  assert.strictEqual(req.payload.response_format.type, 'json_schema');
+  assert.strictEqual(req.payload.response_format.json_schema.strict, true);
+  assert.strictEqual(req.payload.reasoning_effort, 'low');
+  assert.strictEqual(req.payload.include_reasoning, false);
+  assert.strictEqual(req.payload.messages[0].role, 'system');
+  assert.ok(req.payload.messages[1].content.includes('Instagram reels'));
+
+  const row = env.log().rows[1];
+  assert.strictEqual(col('Delivery Status', row, env), 'SENT');
+  assert.strictEqual(col('Model', row, env), 'groq:openai/gpt-oss-120b');
+  assert.strictEqual(env.calls.emails[0].subject, AI_OUTPUT.email_subject);
+});
+
+test('groq: AI_PROVIDER override + custom non-reasoning model', () => {
+  const env = makeEnv({ props: { AI_PROVIDER: 'groq', GROQ_API_KEY: 'g', GROQ_MODEL: 'qwen/qwen3.6-27b' },
+    responses: [groqResponse()] });
+  env.ctx.handleFormSubmit(formEvent());
+  const p = env.calls.fetch[0].payload;
+  assert.strictEqual(p.model, 'qwen/qwen3.6-27b');
+  assert.strictEqual(p.reasoning_effort, undefined);
+});
+
+test('groq: truncated output and incomplete JSON are logged as errors', () => {
+  let env = makeEnv({ props: { AI_PROVIDER: 'groq', GROQ_API_KEY: 'g' }, responses: [groqResponse(null, 'length')] });
+  env.ctx.handleFormSubmit(formEvent());
+  assert.match(col('Error', env.log().rows[1], env), /cut off/);
+
+  env = makeEnv({ props: { AI_PROVIDER: 'groq', GROQ_API_KEY: 'g' },
+    responses: [groqResponse({ lead_score: 'hot' })] });
+  env.ctx.handleFormSubmit(formEvent());
+  assert.match(col('Error', env.log().rows[1], env), /missing "lead_summary"/);
+  assert.strictEqual(env.calls.emails.length, 0);
+});
+
+test('groq: HTTP error message surfaces in the log', () => {
+  const env = makeEnv({ props: { AI_PROVIDER: 'groq', GROQ_API_KEY: 'bad' },
+    responses: [{ code: 401, body: { error: { message: 'Invalid API Key' } } }] });
+  env.ctx.handleFormSubmit(formEvent());
+  assert.match(col('Error', env.log().rows[1], env), /HTTP 401 from api.groq.com: Invalid API Key/);
+});
+
 test('setup installs the trigger once', () => {
   const env = makeEnv();
   env.ctx.setup();
