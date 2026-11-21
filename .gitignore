@@ -4,3 +4,6 @@ node_modules
 .env.local
 .env.*.local
 .vercel
+
+# Local demo recordings (contain personal info; not committed)
+demo-video/
